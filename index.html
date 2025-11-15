@@ -160,19 +160,18 @@
             opacity: 1;
         }
         
-        /* Brush Dropdown Styles - Fixed for Mobile */
+        /* Brush Dropdown Styles */
         .brush-dropdown {
             position: relative;
             display: inline-block;
             z-index: 120; /* Higher than toolbar and tooltips */
         }
-
+        
         .brush-dropdown-content {
             display: none;
-            position: fixed; /* Changed from absolute to fixed */
-            top: auto; /* Let it position naturally */
+            position: absolute;
+            top: 100%;
             left: 0;
-            right: 0;
             background: white;
             min-width: 160px;
             box-shadow: 0 8px 16px rgba(0,0,0,0.1);
@@ -180,11 +179,8 @@
             z-index: 130; /* Highest z-index for dropdowns */
             padding: 10px;
             margin-top: 5px;
-            overflow: visible; /* Allow content to overflow naturally */
-            max-height: none; /* Remove height restrictions */
+            overflow: hidden; /* Prevent content overflow */
         }
-
-
         
         .brush-dropdown:hover .brush-dropdown-content {
             display: block;
@@ -643,21 +639,13 @@
                 flex-direction: column;
             }
             
-            .brush-dropdown-content {
-        position: absolute; /* Use absolute positioning on mobile */
-        top: 100%; /* Position below the button */
-        left: 0;
-        right: auto; /* Don't stretch full width */
-        width: 200px; /* Fixed width */
-        max-height: 300px; /* Reasonable max height */
-        overflow-y: auto; /* Scroll if needed */
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    
-    /* Ensure dropdowns don't get cut off by container */
-    .toolbar {
-        overflow: visible;
-    }
+            .toolbar {
+                flex-direction: row;
+                overflow-x: auto;
+                white-space: nowrap;
+                -webkit-overflow-scrolling: touch;
+                padding: 8px;
+            }
             
             .tool-group {
                 border-right: 1px solid #eee;
