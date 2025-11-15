@@ -44,10 +44,34 @@
             white-space: nowrap;
             -webkit-overflow-scrolling: touch;
             scrollbar-width: none; /* Firefox */
+            position: relative;
         }
         
         .toolbar::-webkit-scrollbar {
             display: none; /* Chrome, Safari, Edge */
+        }
+        
+        /* Scroll hint for mobile */
+        .toolbar::after {
+            content: '← Scroll →';
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(52, 152, 219, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            opacity: 0.8;
+            animation: pulse 2s infinite;
+            pointer-events: none;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.6; }
+            50% { opacity: 0.9; }
+            100% { opacity: 0.6; }
         }
         
         .tool-group {
@@ -666,6 +690,13 @@
                 font-size: 0.7rem;
             }
         }
+        
+        /* Hide scroll hint on larger screens */
+        @media (min-width: 769px) {
+            .toolbar::after {
+                display: none;
+            }
+        }
     </style>
 </head>
 <body>
@@ -946,6 +977,14 @@
             let offsetX = 0, offsetY = 0;
             let moveMode = false; // Toggle for move mode
             
+            // Touch gesture state
+            let lastTouchDistance = null;
+            let initialTouches = [];
+            let isPinching = false;
+            let isTwoFingerMoving = false;
+            let lastTwoFingerX = 0;
+            let lastTwoFingerY = 0;
+            
             // Project state
             let currentProject = {
                 name: 'Untitled',
@@ -1204,7 +1243,7 @@
                 houseCanvas.addEventListener('click', handleCanvasClick);
                 houseCanvas.addEventListener('dblclick', handleCanvasDoubleClick);
                 
-                // Touch events for mobile painting
+                // Touch events for mobile painting and gestures
                 houseCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
                 houseCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
                 houseCanvas.addEventListener('touchend', handleTouchEnd);
@@ -1247,10 +1286,39 @@
                 
                 // Update zoom display
                 updateZoomDisplay();
+                
+                // Hide scroll hint after user interacts with toolbar
+                const toolbar = document.querySelector('.toolbar');
+                toolbar.addEventListener('scroll', function() {
+                    this.style.setProperty('--scroll-hint-opacity', '0');
+                });
             }
             
             // Touch event handlers for mobile
             function handleTouchStart(e) {
+                // Handle pinch and two-finger gestures
+                if (e.touches.length === 2) {
+                    e.preventDefault();
+                    isPinching = true;
+                    isTwoFingerMoving = true;
+                    
+                    // Store initial touch positions
+                    initialTouches = [
+                        { x: e.touches[0].clientX, y: e.touches[0].clientY },
+                        { x: e.touches[1].clientX, y: e.touches[1].clientY }
+                    ];
+                    
+                    // Calculate initial distance between touches
+                    lastTouchDistance = getTouchDistance(e.touches[0], e.touches[1]);
+                    
+                    // Store initial position for two-finger move
+                    lastTwoFingerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                    lastTwoFingerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                    
+                    return;
+                }
+                
+                // Handle single touch for painting
                 if (moveMode || currentTool !== 'brush' && currentTool !== 'eraser') return;
                 
                 e.preventDefault();
@@ -1269,6 +1337,39 @@
             }
             
             function handleTouchMove(e) {
+                // Handle pinch zoom and two-finger move
+                if (e.touches.length === 2) {
+                    e.preventDefault();
+                    
+                    const touch1 = e.touches[0];
+                    const touch2 = e.touches[1];
+                    
+                    // Calculate current distance between touches
+                    const currentDistance = getTouchDistance(touch1, touch2);
+                    
+                    // Handle pinch zoom
+                    if (lastTouchDistance !== null) {
+                        const scaleChange = currentDistance / lastTouchDistance;
+                        scale = Math.max(0.2, Math.min(5, scale * scaleChange));
+                        updateCanvasTransform();
+                        lastTouchDistance = currentDistance;
+                    }
+                    
+                    // Handle two-finger move
+                    const currentTwoFingerX = (touch1.clientX + touch2.clientX) / 2;
+                    const currentTwoFingerY = (touch1.clientY + touch2.clientY) / 2;
+                    
+                    offsetX += (currentTwoFingerX - lastTwoFingerX) / scale;
+                    offsetY += (currentTwoFingerY - lastTwoFingerY) / scale;
+                    
+                    lastTwoFingerX = currentTwoFingerX;
+                    lastTwoFingerY = currentTwoFingerY;
+                    
+                    updateCanvasTransform();
+                    return;
+                }
+                
+                // Handle single touch for painting
                 if (!isTouchPainting) return;
                 
                 e.preventDefault();
@@ -1284,6 +1385,15 @@
             }
             
             function handleTouchEnd(e) {
+                // Reset gesture states
+                if (e.touches.length < 2) {
+                    isPinching = false;
+                    isTwoFingerMoving = false;
+                    lastTouchDistance = null;
+                    initialTouches = [];
+                }
+                
+                // Handle single touch end
                 if (!isTouchPainting) return;
                 
                 e.preventDefault();
@@ -1292,6 +1402,13 @@
                 // Convert touch to mouse event for painting
                 const mouseEvent = new MouseEvent('mouseup');
                 houseCanvas.dispatchEvent(mouseEvent);
+            }
+            
+            // Calculate distance between two touch points
+            function getTouchDistance(touch1, touch2) {
+                const dx = touch1.clientX - touch2.clientX;
+                const dy = touch1.clientY - touch2.clientY;
+                return Math.sqrt(dx * dx + dy * dy);
             }
             
             // Handle color search
