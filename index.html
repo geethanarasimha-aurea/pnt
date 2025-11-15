@@ -25,58 +25,14 @@
             padding: 20px;
         }
         
+        /* Header is hidden on all devices */
         header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-            padding: 15px 25px;
-            background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
-            color: white;
-            border-radius: 10px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        }
-        
-        .logo {
-            font-size: 1.8rem;
-            font-weight: bold;
-        }
-        
-        .menu-bar {
-            display: flex;
-            gap: 20px;
-        }
-        
-        .menu-item {
-            padding: 8px 15px;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        
-        .menu-item:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-        
-        h1 {
-            font-size: 2.5rem;
-            margin-bottom: 10px;
-            text-align: center;
-        }
-        
-        .subtitle {
-            font-size: 1.2rem;
-            opacity: 0.9;
-            text-align: center;
-            margin-bottom: 30px;
+            display: none;
         }
         
         /* Compact Toolbar Styles */
         .toolbar {
             display: flex;
-            flex-wrap: wrap;
-            gap: 5px;
             background: white;
             padding: 10px;
             border-radius: 10px;
@@ -84,6 +40,14 @@
             margin-bottom: 20px;
             justify-content: flex-start;
             align-items: center;
+            overflow-x: auto;
+            white-space: nowrap;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none; /* Firefox */
+        }
+        
+        .toolbar::-webkit-scrollbar {
+            display: none; /* Chrome, Safari, Edge */
         }
         
         .tool-group {
@@ -92,6 +56,7 @@
             padding: 0 10px;
             border-right: 1px solid #eee;
             align-items: center;
+            flex-shrink: 0;
         }
         
         .tool-group:last-child {
@@ -111,6 +76,7 @@
             transition: all 0.2s;
             font-size: 1.2rem;
             position: relative;
+            flex-shrink: 0;
         }
         
         .tool-btn:hover {
@@ -311,6 +277,7 @@
             width: 100%;
             padding: 15px;
             box-sizing: border-box;
+            touch-action: none; /* Prevent scrolling when painting */
         }
         
         .canvas-container.move-mode {
@@ -326,6 +293,7 @@
             max-width: 100%;
             transform-origin: 0 0;
             margin: 0 auto;
+            touch-action: none; /* Prevent scrolling when painting */
         }
         
         #tempCanvas {
@@ -627,32 +595,24 @@
                 flex-direction: column;
             }
             
-            header {
-                flex-direction: column;
-                gap: 15px;
-            }
-            
-            .menu-bar {
-                width: 100%;
-                justify-content: center;
-            }
-            
             .toolbar {
-                flex-direction: column;
-                align-items: center;
-                gap: 8px;
+                flex-direction: row;
+                overflow-x: auto;
+                white-space: nowrap;
+                -webkit-overflow-scrolling: touch;
+                padding: 8px;
             }
             
             .tool-group {
-                border-right: none;
-                border-bottom: 1px solid #eee;
-                padding: 8px 0;
-                width: 100%;
-                justify-content: center;
+                border-right: 1px solid #eee;
+                border-bottom: none;
+                padding: 0 8px;
+                width: auto;
+                justify-content: flex-start;
             }
             
             .tool-group:last-child {
-                border-bottom: none;
+                border-right: none;
             }
             
             .canvas-container {
@@ -685,19 +645,6 @@
                 padding: 10px;
             }
             
-            header {
-                padding: 10px 15px;
-            }
-            
-            .logo {
-                font-size: 1.5rem;
-            }
-            
-            .menu-item {
-                padding: 6px 10px;
-                font-size: 0.9rem;
-            }
-            
             .tool-btn {
                 width: 32px;
                 height: 32px;
@@ -723,6 +670,7 @@
 </head>
 <body>
     <div class="container">
+        <!-- Header is hidden on all devices -->
         <header style="display: none;">
             <div class="logo">House Painter Pro</div>
             <div class="menu-bar">
@@ -731,7 +679,7 @@
         </header>
             
         
-        <!-- Compact Icon Toolbar -->
+        <!-- Compact Icon Toolbar - Single line horizontal on mobile -->
         <div class="toolbar">
             <!-- Upload Image Button -->
             <div class="tool-group">
@@ -850,6 +798,20 @@
         </div>
         
         <div class="app-container">
+            <div class="preview-section">
+                <h2 class="section-title">Preview</h2>
+                <div class="canvas-container" id="canvasContainer">
+                    <canvas id="houseCanvas"></canvas>
+                    <canvas id="tempCanvas"></canvas>
+                    <div class="zoom-controls">
+                        <button class="zoom-btn" id="zoomInBtn">+</button>
+                        <div class="zoom-level" id="zoomLevel">100%</div>
+                        <button class="zoom-btn" id="zoomOutBtn">-</button>
+                        <button class="zoom-btn" id="resetZoomBtn">⟳</button>
+                    </div>
+                </div>
+            </div>
+            
             <div class="tools-section">
                 <h2 class="section-title">Color & Settings</h2>
                 
@@ -890,20 +852,6 @@
                     • <strong>Alt+Click</strong> to remove from selection<br>
                     • <strong>Shift+Drag</strong> to add multiple regions<br>
                     • <strong>Alt+Drag</strong> to remove multiple regions
-                </div>
-            </div>
-            
-            <div class="preview-section">
-                <h2 class="section-title">Preview</h2>
-                <div class="canvas-container" id="canvasContainer">
-                    <canvas id="houseCanvas"></canvas>
-                    <canvas id="tempCanvas"></canvas>
-                    <div class="zoom-controls">
-                        <button class="zoom-btn" id="zoomInBtn">+</button>
-                        <div class="zoom-level" id="zoomLevel">100%</div>
-                        <button class="zoom-btn" id="zoomOutBtn">-</button>
-                        <button class="zoom-btn" id="resetZoomBtn">⟳</button>
-                    </div>
                 </div>
             </div>
         </div>
@@ -971,9 +919,6 @@
             const resetBtn = document.getElementById('resetBtn');
             const uploadImageBtn = document.getElementById('uploadImageBtn');
             
-            // Menu items
-            const uploadMenu = document.getElementById('uploadMenu');
-            
             // Modals
             const uploadModal = document.getElementById('uploadModal');
             const closeUploadModal = document.getElementById('closeUploadModal');
@@ -1030,6 +975,10 @@
             
             // Applied colors tracking
             let appliedColors = new Set();
+            
+            // Touch state for preventing scroll
+            let isTouchPainting = false;
+            let touchStartX, touchStartY;
             
             // Paint brand colors
             const asianPaintsColors = {
@@ -1255,6 +1204,11 @@
                 houseCanvas.addEventListener('click', handleCanvasClick);
                 houseCanvas.addEventListener('dblclick', handleCanvasDoubleClick);
                 
+                // Touch events for mobile painting
+                houseCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+                houseCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+                houseCanvas.addEventListener('touchend', handleTouchEnd);
+                
                 // Enhanced Auto-Select events
                 houseCanvas.addEventListener('mousedown', startDragSelection);
                 houseCanvas.addEventListener('mousemove', dragSelection);
@@ -1265,10 +1219,6 @@
                 canvasContainer.addEventListener('mousemove', doPanning);
                 canvasContainer.addEventListener('mouseup', stopPanning);
                 canvasContainer.addEventListener('mouseleave', stopPanning);
-                
-                // Menu events
-                uploadMenu.addEventListener('click', () => uploadModal.style.display = 'flex');
-                closeUploadModal.addEventListener('click', () => uploadModal.style.display = 'none');
                 
                 // Upload events
                 uploadFromComputer.addEventListener('click', () => fileInput.click());
@@ -1297,6 +1247,51 @@
                 
                 // Update zoom display
                 updateZoomDisplay();
+            }
+            
+            // Touch event handlers for mobile
+            function handleTouchStart(e) {
+                if (moveMode || currentTool !== 'brush' && currentTool !== 'eraser') return;
+                
+                e.preventDefault();
+                isTouchPainting = true;
+                
+                const touch = e.touches[0];
+                touchStartX = touch.clientX;
+                touchStartY = touch.clientY;
+                
+                // Convert touch to mouse event for painting
+                const mouseEvent = new MouseEvent('mousedown', {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY
+                });
+                houseCanvas.dispatchEvent(mouseEvent);
+            }
+            
+            function handleTouchMove(e) {
+                if (!isTouchPainting) return;
+                
+                e.preventDefault();
+                
+                const touch = e.touches[0];
+                
+                // Convert touch to mouse event for painting
+                const mouseEvent = new MouseEvent('mousemove', {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY
+                });
+                houseCanvas.dispatchEvent(mouseEvent);
+            }
+            
+            function handleTouchEnd(e) {
+                if (!isTouchPainting) return;
+                
+                e.preventDefault();
+                isTouchPainting = false;
+                
+                // Convert touch to mouse event for painting
+                const mouseEvent = new MouseEvent('mouseup');
+                houseCanvas.dispatchEvent(mouseEvent);
             }
             
             // Handle color search
