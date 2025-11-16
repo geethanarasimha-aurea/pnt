@@ -501,52 +501,57 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             function handleTouchMove(e) {
-                // Handle pinch zoom and two-finger move
-                if (e.touches.length === 2) {
-                    e.preventDefault();
-                    
-                    const touch1 = e.touches[0];
-                    const touch2 = e.touches[1];
-                    
-                    // Calculate current distance between touches
-                    const currentDistance = getTouchDistance(touch1, touch2);
-                    
-                    // Handle pinch zoom
-                    if (lastTouchDistance !== null) {
-                        const scaleChange = currentDistance / lastTouchDistance;
-                        scale = Math.max(0.2, Math.min(5, scale * scaleChange));
-                        updateCanvasTransform();
-                        lastTouchDistance = currentDistance;
-                    }
-                    
-                    // Handle two-finger move
-                    const currentTwoFingerX = (touch1.clientX + touch2.clientX) / 2;
-                    const currentTwoFingerY = (touch1.clientY + touch2.clientY) / 2;
-                    
-                    offsetX += (currentTwoFingerX - lastTwoFingerX) / scale;
-                    offsetY += (currentTwoFingerY - lastTwoFingerY) / scale;
-                    
-                    lastTwoFingerX = currentTwoFingerX;
-                    lastTwoFingerY = currentTwoFingerY;
-                    
-                    updateCanvasTransform();
-                    return;
-                }
-                
-                // Handle single touch for painting
-                if (!isTouchPainting) return;
-                
-                e.preventDefault();
-                
-                const touch = e.touches[0];
-                
-                // Convert touch to mouse event for painting
-                const mouseEvent = new MouseEvent('mousemove', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY
-                });
-                houseCanvas.dispatchEvent(mouseEvent);
-            }
+				// Handle pinch zoom and two-finger move
+				if (e.touches.length === 2) {
+					e.preventDefault();
+					
+					const touch1 = e.touches[0];
+					const touch2 = e.touches[1];
+					
+					// Calculate current distance between touches
+					const currentDistance = getTouchDistance(touch1, touch2);
+					
+					// Handle pinch zoom
+					if (lastTouchDistance !== null) {
+						const scaleChange = currentDistance / lastTouchDistance;
+						scale = Math.max(0.2, Math.min(5, scale * scaleChange));
+						updateCanvasTransform();
+						lastTouchDistance = currentDistance;
+					}
+					
+					// Handle two-finger move - FIXED: Use proper coordinate calculation
+					const currentTwoFingerX = (touch1.clientX + touch2.clientX) / 2;
+					const currentTwoFingerY = (touch1.clientY + touch2.clientY) / 2;
+					
+					// Calculate delta movement in viewport coordinates
+					const deltaX = currentTwoFingerX - lastTwoFingerX;
+					const deltaY = currentTwoFingerY - lastTwoFingerY;
+					
+					// Update global offset (stored in canvas coordinates, not viewport coordinates)
+					offsetX += deltaX / scale;
+					offsetY += deltaY / scale;
+					
+					lastTwoFingerX = currentTwoFingerX;
+					lastTwoFingerY = currentTwoFingerY;
+					
+					updateCanvasTransform();
+					return;
+				}
+				
+				// Handle single touch for painting
+				if (!isTouchPainting) return;
+				
+				e.preventDefault();
+				
+				const touch = e.touches[0];
+				
+				// Convert touch to mouse event for painting with corrected coordinates
+				const mouseEvent = new MouseEvent('mousemove', {
+					clientX: touch.clientX,
+					clientY: touch.clientY
+				});
+				houseCanvas.dispatchEvent(mouseEvent);
+			}
             
             function handleTouchEnd(e) {
                 // Reset gesture states
@@ -744,43 +749,56 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             // Get mouse position with correct alignment to canvas pixels
-            function getMousePos(e) {
-                const rect = houseCanvas.getBoundingClientRect();
-                
-                // Calculate the actual canvas position considering transform
-                const transform = houseCanvas.style.transform;
-                let scaleX = 1;
-                let scaleY = 1;
-                let translateX = 0;
-                let translateY = 0;
-                
-                if (transform) {
-                    // Parse transform values - format is "scale(s) translate(xpx, ypx)"
-                    const scaleMatch = transform.match(/scale\(([^)]+)\)/);
-                    const translateMatch = transform.match(/translate\(([^)]+)\)/);
-                    
-                    if (scaleMatch) {
-                        scaleX = parseFloat(scaleMatch[1]);
-                        scaleY = scaleX;
-                    }
-                    
-                    if (translateMatch) {
-                        const translateParts = translateMatch[1].split(',');
-                        translateX = parseFloat(translateParts[0]);
-                        translateY = parseFloat(translateParts[1]);
-                    }
-                }
-                
-                // Calculate mouse position relative to transformed canvas
-                const mouseX = (e.clientX - rect.left - translateX) / scaleX;
-                const mouseY = (e.clientY - rect.top - translateY) / scaleY;
-                
-                // Ensure coordinates are within canvas bounds
-                const x = Math.max(0, Math.min(mouseX, houseCanvas.width));
-                const y = Math.max(0, Math.min(mouseY, houseCanvas.height));
-                
-                return { x, y };
-            }
+			function getMousePos(e) {
+				const rect = houseCanvas.getBoundingClientRect();
+				
+				// Get the current transform values from the canvas style
+				const transform = houseCanvas.style.transform;
+				let currentScale = 1;
+				let currentTranslateX = 0;
+				let currentTranslateY = 0;
+				
+				if (transform) {
+					// Parse transform values - format is "scale(s) translate(xpx, ypx)"
+					const scaleMatch = transform.match(/scale\(([^)]+)\)/);
+					const translateMatch = transform.match(/translate\(([^)]+)\)/);
+					
+					if (scaleMatch) {
+						currentScale = parseFloat(scaleMatch[1]);
+					}
+					
+					if (translateMatch) {
+						const translateParts = translateMatch[1].split(',');
+						currentTranslateX = parseFloat(translateParts[0]);
+						currentTranslateY = parseFloat(translateParts[1]);
+					}
+				}
+				
+				// Use the global offset values for panning (these are updated in real-time during two-finger move)
+				const effectiveTranslateX = offsetX * currentScale;
+				const effectiveTranslateY = offsetY * currentScale;
+				
+				// Calculate raw mouse/touch position relative to viewport
+				const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+				const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+				
+				if (clientX === undefined || clientY === undefined) return { x: 0, y: 0 };
+				
+				// Calculate position relative to canvas element
+				const rawX = clientX - rect.left;
+				const rawY = clientY - rect.top;
+				
+				// Apply inverse transform to get actual canvas coordinates
+				// Subtract the effective translation (which includes both CSS transform and pan offset)
+				const x = (rawX - currentTranslateX - effectiveTranslateX) / currentScale;
+				const y = (rawY - currentTranslateY - effectiveTranslateY) / currentScale;
+				
+				// Ensure coordinates are within canvas bounds
+				const boundedX = Math.max(0, Math.min(x, houseCanvas.width));
+				const boundedY = Math.max(0, Math.min(y, houseCanvas.height));
+				
+				return { x: boundedX, y: boundedY };
+			}
             
             // Toggle move mode on/off
             function toggleMoveMode() {
