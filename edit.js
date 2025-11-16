@@ -1335,51 +1335,51 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             // Handle canvas click for tools
-            function handleCanvasClick(e) {
-                // Don't process clicks if in move mode
-                if (moveMode) return;
-                
-                const pos = getMousePos(e);
-                const x = pos.x;
-                const y = pos.y;
-                
-                if (currentTool === 'autoSelect') {
-                    // Enhanced auto-select with Shift and Alt functionality
-                    if (isDragging) return; // Skip if we're in the middle of a drag operation
-                   
-                    const imageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
-                    const data = imageData.data;
-                    const index = (Math.floor(y) * houseCanvas.width + Math.floor(x)) * 4;
-                    const targetColor = [data[index], data[index + 1], data[index + 2]];
-                    const toleranceValue = parseInt(tolerance.value);
-                    const region = floodFill(Math.floor(x), Math.floor(y), targetColor, toleranceValue, data, houseCanvas.width, houseCanvas.height);
-                    
-                    if (e.altKey) {
-                        for (const key of region) selectedPixels.delete(key);
-                    } else {
-                        if (!e.shiftKey) selectedPixels.clear();
-                        for (const key of region) selectedPixels.add(key);
-                    }
-                    
-                    drawZigZagOutline(selectedPixels);
-                    
-                    // Apply color immediately if not using modifier keys
-                    if (!e.shiftKey && !e.altKey) {
-                        applyColorToSelection();
-                    }
-                } else if (currentTool === 'lasso') {
-                    if (!isDrawingLasso) {
-                        // Start new lasso selection
-                        lassoPoints = [{x, y}];
-                        isDrawingLasso = true;
-                        drawLassoPreview();
-                    } else {
-                        // Add point to existing lasso
-                        lassoPoints.push({x, y});
-                        drawLassoPreview();
-                    }
-                }
-            }
+			function handleCanvasClick(e) {
+				// Don't process clicks if in move mode
+				if (moveMode) return;
+				
+				const pos = getMousePos(e);
+				const x = pos.x;
+				const y = pos.y;
+				
+				if (currentTool === 'autoSelect') {
+					// Enhanced auto-select with Shift and Alt functionality
+					if (isDragging) return; // Skip if we're in the middle of a drag operation
+				   
+					const imageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
+					const data = imageData.data;
+					const index = (Math.floor(y) * houseCanvas.width + Math.floor(x)) * 4;
+					const targetColor = [data[index], data[index + 1], data[index + 2]];
+					const toleranceValue = parseInt(tolerance.value);
+					const region = floodFill(Math.floor(x), Math.floor(y), targetColor, toleranceValue, data, houseCanvas.width, houseCanvas.height);
+					
+					if (e.altKey) {
+						for (const key of region) selectedPixels.delete(key);
+					} else {
+						if (!e.shiftKey) selectedPixels.clear();
+						for (const key of region) selectedPixels.add(key);
+					}
+					
+					drawZigZagOutline(selectedPixels);
+					
+					// Apply color immediately if not using modifier keys
+					if (!e.shiftKey && !e.altKey) {
+						applyColorToSelection();
+					}
+				} else if (currentTool === 'lasso') {
+					if (!isDrawingLasso) {
+						// Start new lasso selection
+						lassoPoints = [{x, y}];
+						isDrawingLasso = true;
+						drawLassoPreview();
+					} else {
+						// Add point to existing lasso
+						lassoPoints.push({x, y});
+						drawLassoPreview();
+					}
+				}
+			}
             
             // Apply current color to selection
             function applyColorToSelection() {
