@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', function() {
             dropdownContent.style.display = 'none';
         });
         
-        // Keep dropdown open when hovering over content
+        // Keep dropdown open when hovering over dropdown area
         dropdownContent.addEventListener('mouseenter', function() {
             dropdownContent.style.display = 'block';
         });
@@ -93,8 +93,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Zoom state
     let scale = 1;
-    let isPinching = false;
-    let lastTouchDistance = null;
 
     // Touch gesture state
     let isTouchPainting = false;
@@ -135,18 +133,13 @@ document.addEventListener('DOMContentLoaded', function() {
     // Applied colors tracking
     let appliedColors = new Set();
     
-    // Scroll bar drag state
-    let isDraggingScrollBar = false;
-    let scrollBarType = null; // 'vertical', 'horizontal', or 'both' for two-finger
-    let scrollStartPosition = 0;
-    let scrollStartValue = 0;
-    
     // Two-finger scroll state
     let isTwoFingerScrolling = false;
     let twoFingerStartX = 0;
     let twoFingerStartY = 0;
     let twoFingerScrollStartX = 0;
     let twoFingerScrollStartY = 0;
+    let lastTwoFingerMoveTime = 0;
     
     // Paint brand colors
     const asianPaintsColors = {
@@ -385,7 +378,7 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.addEventListener('click', handleCanvasClick);
         houseCanvas.addEventListener('dblclick', handleCanvasDoubleClick);
         
-        // Touch events for mobile painting and zoom
+        // Touch events for mobile - REMOVED PINCH ZOOM, ADDED TWO-FINGER SCROLL
         houseCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         houseCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         houseCanvas.addEventListener('touchend', handleTouchEnd);
@@ -434,40 +427,36 @@ document.addEventListener('DOMContentLoaded', function() {
         // Setup mobile scroll functionality
         setupMobileScroll();
         
-        // Setup scroll bar drag functionality
-        setupScrollBarDrag();
-        
         // Hide scroll hint after user interacts with toolbar
         toolbar.addEventListener('scroll', function() {
             this.classList.add('scrolled');
         });
     }
     
-    // Enhanced Scroll Bar Drag Functionality for Mobile with Two-Finger Support
-    function setupScrollBarDrag() {
+    // Enhanced Two-Finger Scroll Functionality for Mobile
+    function setupTwoFingerScroll() {
         if (!isMobileDevice()) return;
         
         const canvasContainer = document.getElementById('canvasContainer');
         if (!canvasContainer) return;
         
         // Remove existing event listeners
-        canvasContainer.removeEventListener('touchstart', handleScrollBarTouchStart);
-        document.removeEventListener('touchmove', handleScrollBarTouchMove);
-        document.removeEventListener('touchend', handleScrollBarTouchEnd);
-        document.removeEventListener('touchcancel', handleScrollBarTouchEnd);
+        canvasContainer.removeEventListener('touchstart', handleTwoFingerTouchStart);
+        document.removeEventListener('touchmove', handleTwoFingerTouchMove);
+        document.removeEventListener('touchend', handleTwoFingerTouchEnd);
+        document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
         
         // Add new event listeners
-        canvasContainer.addEventListener('touchstart', handleScrollBarTouchStart, { passive: false });
+        canvasContainer.addEventListener('touchstart', handleTwoFingerTouchStart, { passive: false });
     }
 
-    function handleScrollBarTouchStart(e) {
+    function handleTwoFingerTouchStart(e) {
         // Don't interfere with painting tools
         if (currentTool === 'brush' || currentTool === 'eraser') return;
         
-        const rect = canvasContainer.getBoundingClientRect();
         const touches = e.touches;
         
-        // Check for two-finger touch on scrollbar areas
+        // Check for two-finger touch anywhere on the canvas container
         if (touches.length === 2) {
             const touch1 = touches[0];
             const touch2 = touches[1];
@@ -476,93 +465,36 @@ document.addEventListener('DOMContentLoaded', function() {
             const avgX = (touch1.clientX + touch2.clientX) / 2;
             const avgY = (touch1.clientY + touch2.clientY) / 2;
             
-            // Check if two fingers are on scrollbar areas
-            const scrollbarSize = 50; // Match CSS scrollbar width
-            const isOnVerticalScrollbar = avgX >= (rect.right - scrollbarSize);
-            const isOnHorizontalScrollbar = avgY >= (rect.bottom - scrollbarSize);
+            isTwoFingerScrolling = true;
             
-            if (isOnVerticalScrollbar || isOnHorizontalScrollbar) {
-                isTwoFingerScrolling = true;
-                isDraggingScrollBar = true;
-                scrollBarType = 'both'; // Special type for two-finger scrolling
-                
-                twoFingerStartX = avgX;
-                twoFingerStartY = avgY;
-                twoFingerScrollStartX = canvasContainer.scrollLeft;
-                twoFingerScrollStartY = canvasContainer.scrollTop;
-                
-                e.preventDefault();
-                e.stopPropagation();
-                
-                console.log('Two-finger scrollbar drag started');
-                
-                // Add global event listeners
-                document.addEventListener('touchmove', handleScrollBarTouchMove, { passive: false });
-                document.addEventListener('touchend', handleScrollBarTouchEnd);
-                document.addEventListener('touchcancel', handleScrollBarTouchEnd);
-                return;
-            }
-        }
-        
-        // Single finger scrollbar drag (existing functionality)
-        if (touches.length === 1) {
-            const touchX = touches[0].clientX;
-            const touchY = touches[0].clientY;
+            twoFingerStartX = avgX;
+            twoFingerStartY = avgY;
+            twoFingerScrollStartX = canvasContainer.scrollLeft;
+            twoFingerScrollStartY = canvasContainer.scrollTop;
+            lastTwoFingerMoveTime = Date.now();
             
-            // Calculate scrollbar areas with larger touch targets
-            const scrollbarSize = 50;
-            const verticalScrollbarLeft = rect.right - scrollbarSize;
-            const horizontalScrollbarTop = rect.bottom - scrollbarSize;
+            e.preventDefault();
+            e.stopPropagation();
             
-            // Check if touch is on vertical scrollbar area (right 50px)
-            if (touchX >= verticalScrollbarLeft && touchX <= rect.right) {
-                isDraggingScrollBar = true;
-                scrollBarType = 'vertical';
-                scrollStartPosition = touchY;
-                scrollStartValue = canvasContainer.scrollTop;
-                e.preventDefault();
-                e.stopPropagation();
-                
-                console.log('Vertical scrollbar drag started');
-                
-                // Add global event listeners
-                document.addEventListener('touchmove', handleScrollBarTouchMove, { passive: false });
-                document.addEventListener('touchend', handleScrollBarTouchEnd);
-                document.addEventListener('touchcancel', handleScrollBarTouchEnd);
-                return;
-            }
+            console.log('Two-finger scroll started');
             
-            // Check if touch is on horizontal scrollbar area (bottom 50px)
-            if (touchY >= horizontalScrollbarTop && touchY <= rect.bottom) {
-                isDraggingScrollBar = true;
-                scrollBarType = 'horizontal';
-                scrollStartPosition = touchX;
-                scrollStartValue = canvasContainer.scrollLeft;
-                e.preventDefault();
-                e.stopPropagation();
-                
-                console.log('Horizontal scrollbar drag started');
-                
-                // Add global event listeners
-                document.addEventListener('touchmove', handleScrollBarTouchMove, { passive: false });
-                document.addEventListener('touchend', handleScrollBarTouchEnd);
-                document.addEventListener('touchcancel', handleScrollBarTouchEnd);
-                return;
-            }
+            // Add global event listeners
+            document.addEventListener('touchmove', handleTwoFingerTouchMove, { passive: false });
+            document.addEventListener('touchend', handleTwoFingerTouchEnd);
+            document.addEventListener('touchcancel', handleTwoFingerTouchEnd);
+            return;
         }
     }
 
-    function handleScrollBarTouchMove(e) {
-        if (!isDraggingScrollBar) return;
+    function handleTwoFingerTouchMove(e) {
+        if (!isTwoFingerScrolling) return;
         
         e.preventDefault();
         e.stopPropagation();
         
         const touches = e.touches;
-        const rect = canvasContainer.getBoundingClientRect();
         
-        if (isTwoFingerScrolling && touches.length === 2) {
-            // Two-finger scrolling - move both scrollbars simultaneously
+        if (touches.length === 2) {
             const touch1 = touches[0];
             const touch2 = touches[1];
             
@@ -570,11 +502,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const avgX = (touch1.clientX + touch2.clientX) / 2;
             const avgY = (touch1.clientY + touch2.clientY) / 2;
             
-            // Calculate deltas
-            const deltaX = avgX - twoFingerStartX;
-            const deltaY = avgY - twoFingerStartY;
+            // Calculate deltas (inverted for natural scrolling)
+            const deltaX = twoFingerStartX - avgX;
+            const deltaY = twoFingerStartY - avgY;
             
-            // Calculate scroll parameters for both directions
+            // Calculate scroll parameters
+            const rect = canvasContainer.getBoundingClientRect();
             const contentWidth = houseCanvas.width * scale;
             const contentHeight = houseCanvas.height * scale;
             const containerWidth = rect.width;
@@ -583,13 +516,14 @@ document.addEventListener('DOMContentLoaded', function() {
             const maxScrollLeft = Math.max(0, contentWidth - containerWidth);
             const maxScrollTop = Math.max(0, contentHeight - containerHeight);
             
-            // Calculate scroll ratios
-            const scrollRatioX = maxScrollLeft > 0 ? maxScrollLeft / (containerWidth - 50) : 0;
-            const scrollRatioY = maxScrollTop > 0 ? maxScrollTop / (containerHeight - 50) : 0;
+            // Calculate scroll ratios based on movement speed
+            const currentTime = Date.now();
+            const timeDiff = currentTime - lastTwoFingerMoveTime;
+            const speedMultiplier = Math.min(2, Math.max(0.5, 100 / Math.max(timeDiff, 16))); // 60fps base
             
-            // Calculate new scroll positions
-            const scrollDeltaX = deltaX * scrollRatioX;
-            const scrollDeltaY = deltaY * scrollRatioY;
+            // Apply scroll with momentum
+            const scrollDeltaX = deltaX * speedMultiplier;
+            const scrollDeltaY = deltaY * speedMultiplier;
             
             const newScrollLeft = Math.max(0, Math.min(maxScrollLeft, twoFingerScrollStartX + scrollDeltaX));
             const newScrollTop = Math.max(0, Math.min(maxScrollTop, twoFingerScrollStartY + scrollDeltaY));
@@ -598,66 +532,31 @@ document.addEventListener('DOMContentLoaded', function() {
             canvasContainer.scrollLeft = newScrollLeft;
             canvasContainer.scrollTop = newScrollTop;
             
+            // Update for next movement
+            twoFingerStartX = avgX;
+            twoFingerStartY = avgY;
+            twoFingerScrollStartX = newScrollLeft;
+            twoFingerScrollStartY = newScrollTop;
+            lastTwoFingerMoveTime = currentTime;
+            
             console.log('Two-finger scroll:', newScrollLeft, newScrollTop);
-            
-        } else if (scrollBarType === 'vertical' && touches.length === 1) {
-            // Single finger vertical scrolling
-            const touchY = touches[0].clientY;
-            const deltaY = touchY - scrollStartPosition;
-            
-            // Calculate scroll parameters
-            const contentHeight = houseCanvas.height * scale;
-            const containerHeight = rect.height;
-            const maxScrollTop = Math.max(0, contentHeight - containerHeight);
-            
-            if (maxScrollTop > 0) {
-                // Calculate scroll ratio (how much content moves per pixel of drag)
-                const scrollRatio = maxScrollTop / (containerHeight - 50);
-                const scrollDelta = deltaY * scrollRatio;
-                const newScrollTop = Math.max(0, Math.min(maxScrollTop, scrollStartValue + scrollDelta));
-                
-                canvasContainer.scrollTop = newScrollTop;
-                console.log('Vertical scroll:', newScrollTop);
-            }
-            
-        } else if (scrollBarType === 'horizontal' && touches.length === 1) {
-            // Single finger horizontal scrolling
-            const touchX = touches[0].clientX;
-            const deltaX = touchX - scrollStartPosition;
-            
-            // Calculate scroll parameters
-            const contentWidth = houseCanvas.width * scale;
-            const containerWidth = rect.width;
-            const maxScrollLeft = Math.max(0, contentWidth - containerWidth);
-            
-            if (maxScrollLeft > 0) {
-                // Calculate scroll ratio (how much content moves per pixel of drag)
-                const scrollRatio = maxScrollLeft / (containerWidth - 50);
-                const scrollDelta = deltaX * scrollRatio;
-                const newScrollLeft = Math.max(0, Math.min(maxScrollLeft, scrollStartValue + scrollDelta));
-                
-                canvasContainer.scrollLeft = newScrollLeft;
-                console.log('Horizontal scroll:', newScrollLeft);
-            }
         }
     }
 
-    function handleScrollBarTouchEnd(e) {
-        if (!isDraggingScrollBar) return;
+    function handleTwoFingerTouchEnd(e) {
+        if (!isTwoFingerScrolling) return;
         
-        isDraggingScrollBar = false;
         isTwoFingerScrolling = false;
-        scrollBarType = null;
         
-        console.log('Scrollbar drag ended');
+        console.log('Two-finger scroll ended');
         
         // Remove global event listeners
-        document.removeEventListener('touchmove', handleScrollBarTouchMove);
-        document.removeEventListener('touchend', handleScrollBarTouchEnd);
-        document.removeEventListener('touchcancel', handleScrollBarTouchEnd);
+        document.removeEventListener('touchmove', handleTwoFingerTouchMove);
+        document.removeEventListener('touchend', handleTwoFingerTouchEnd);
+        document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
     }
     
-    // NEW: Setup mobile scroll functionality with big touch points
+    // NEW: Setup mobile scroll functionality
     function setupMobileScroll() {
         // Remove existing scroll handlers if any
         canvasContainer.removeEventListener('touchstart', handleMobileScrollStart);
@@ -669,13 +568,16 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.addEventListener('touchmove', handleMobileScrollMove, { passive: false });
         canvasContainer.addEventListener('touchend', handleMobileScrollEnd);
         
+        // Setup two-finger scroll
+        setupTwoFingerScroll();
+        
         // Update canvas container styles for mobile
         if (isMobileDevice()) {
             canvasContainer.style.overflow = 'auto';
             canvasContainer.style.webkitOverflowScrolling = 'touch';
             canvasContainer.style.cursor = 'grab';
             
-            // Force scrollbars to be visible
+            // Force scrollbars to be always visible
             canvasContainer.style.overflowY = 'scroll';
             canvasContainer.style.overflowX = 'scroll';
             
@@ -790,43 +692,31 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.addEventListener('touchstart', removeIndicators);
     }
     
-    // NEW: Handle mobile scroll start
+    // NEW: Handle mobile scroll start (single finger)
     function handleMobileScrollStart(e) {
-        // Don't start regular scrolling if we're dragging scrollbars
-        if (isDraggingScrollBar) return;
+        // Don't start regular scrolling if we're in two-finger mode
+        if (isTwoFingerScrolling) return;
         
         if (e.touches.length !== 1 || currentTool === 'brush' || currentTool === 'eraser') return;
         
-        const rect = canvasContainer.getBoundingClientRect();
-        const touchX = e.touches[0].clientX;
-        const touchY = e.touches[0].clientY;
+        e.preventDefault();
+        isMobileScrolling = true;
         
-        // Check if touch is NOT on scrollbar areas
-        const scrollbarSize = 50;
-        const isOnVerticalScrollbar = touchX >= (rect.right - scrollbarSize);
-        const isOnHorizontalScrollbar = touchY >= (rect.bottom - scrollbarSize);
+        const touch = e.touches[0];
+        scrollStartX = touch.clientX;
+        scrollStartY = touch.clientY;
+        scrollOffsetX = canvasContainer.scrollLeft;
+        scrollOffsetY = canvasContainer.scrollTop;
         
-        // Only allow regular scrolling if not on scrollbars
-        if (!isOnVerticalScrollbar && !isOnHorizontalScrollbar) {
-            e.preventDefault();
-            isMobileScrolling = true;
-            
-            const touch = e.touches[0];
-            scrollStartX = touch.clientX;
-            scrollStartY = touch.clientY;
-            scrollOffsetX = canvasContainer.scrollLeft;
-            scrollOffsetY = canvasContainer.scrollTop;
-            
-            // Show scroll handle
-            showScrollHandle(touch.clientX, touch.clientY);
-            
-            canvasContainer.style.cursor = 'grabbing';
-        }
+        // Show scroll handle
+        showScrollHandle(touch.clientX, touch.clientY);
+        
+        canvasContainer.style.cursor = 'grabbing';
     }
     
-    // NEW: Handle mobile scroll move
+    // NEW: Handle mobile scroll move (single finger)
     function handleMobileScrollMove(e) {
-        if (!isMobileScrolling || e.touches.length !== 1 || isDraggingScrollBar) return;
+        if (!isMobileScrolling || e.touches.length !== 1 || isTwoFingerScrolling) return;
         
         e.preventDefault();
         
@@ -842,7 +732,7 @@ document.addEventListener('DOMContentLoaded', function() {
         updateScrollHandle(touch.clientX, touch.clientY);
     }
     
-    // NEW: Handle mobile scroll end
+    // NEW: Handle mobile scroll end (single finger)
     function handleMobileScrollEnd() {
         isMobileScrolling = false;
         canvasContainer.style.cursor = 'grab';
@@ -898,19 +788,9 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Touch event handlers for mobile
+    // UPDATED: Touch event handlers for mobile - REMOVED PINCH ZOOM
     function handleTouchStart(e) {
-        // Handle pinch zoom
-        if (e.touches.length === 2 && !isDraggingScrollBar) {
-            e.preventDefault();
-            isPinching = true;
-            
-            // Calculate initial distance between touches
-            lastTouchDistance = getTouchDistance(e.touches[0], e.touches[1]);
-            return;
-        }
-        
-        // Handle single touch for painting
+        // Handle single touch for painting only
         if (currentTool !== 'brush' && currentTool !== 'eraser') return;
         
         e.preventDefault();
@@ -930,27 +810,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function handleTouchMove(e) {
-        // Handle pinch zoom
-        if (e.touches.length === 2 && isPinching && !isDraggingScrollBar) {
-            e.preventDefault();
-            
-            const touch1 = e.touches[0];
-            const touch2 = e.touches[1];
-            
-            // Calculate current distance between touches
-            const currentDistance = getTouchDistance(touch1, touch2);
-            
-            // Handle pinch zoom
-            if (lastTouchDistance !== null) {
-                const scaleChange = currentDistance / lastTouchDistance;
-                scale = Math.max(0.2, Math.min(5, scale * scaleChange));
-                updateCanvasTransform();
-                lastTouchDistance = currentDistance;
-            }
-            return;
-        }
-        
-        // Handle single touch for painting
+        // Handle single touch for painting only
         if (!isTouchPainting) return;
         
         e.preventDefault();
@@ -966,12 +826,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function handleTouchEnd(e) {
-        // Reset gesture states
-        if (e.touches.length < 2) {
-            isPinching = false;
-            lastTouchDistance = null;
-        }
-        
         // Handle single touch end
         if (!isTouchPainting) return;
         
@@ -983,14 +837,7 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.dispatchEvent(mouseEvent);
     }
     
-    // Calculate distance between two touch points
-    function getTouchDistance(touch1, touch2) {
-        const dx = touch1.clientX - touch2.clientX;
-        const dy = touch1.clientY - touch2.clientY;
-        return Math.sqrt(dx * dx + dy * dy);
-    }
-    
-    // Zoom functions
+    // Zoom functions - ONLY WORK WITH TOOLBAR BUTTONS NOW
     function zoomIn() {
         scale = Math.min(scale * 1.2, 5);
         updateCanvasTransform();
