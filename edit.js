@@ -100,6 +100,11 @@ document.addEventListener('DOMContentLoaded', function() {
     let isTouchPainting = false;
     let touchStartX, touchStartY;
     
+    // Mobile scroll state
+    let isMobileScrolling = false;
+    let scrollStartX, scrollStartY;
+    let scrollOffsetX = 0, scrollOffsetY = 0;
+    
     // Project state
     let currentProject = {
         name: 'Untitled',
@@ -400,6 +405,7 @@ document.addEventListener('DOMContentLoaded', function() {
         window.addEventListener('resize', () => {
             resizeCanvas();
             alignTempCanvas();
+            setupMobileScroll();
         });
         
         // Load a sample image by default
@@ -412,10 +418,234 @@ document.addEventListener('DOMContentLoaded', function() {
         // Update zoom display
         updateZoomDisplay();
         
+        // Setup mobile scroll functionality
+        setupMobileScroll();
+        
         // Hide scroll hint after user interacts with toolbar
         toolbar.addEventListener('scroll', function() {
             this.classList.add('scrolled');
         });
+    }
+    
+    // NEW: Setup mobile scroll functionality with big touch points
+    function setupMobileScroll() {
+        // Remove existing scroll handlers if any
+        canvasContainer.removeEventListener('touchstart', handleMobileScrollStart);
+        canvasContainer.removeEventListener('touchmove', handleMobileScrollMove);
+        canvasContainer.removeEventListener('touchend', handleMobileScrollEnd);
+        
+        // Add mobile scroll handlers
+        canvasContainer.addEventListener('touchstart', handleMobileScrollStart, { passive: false });
+        canvasContainer.addEventListener('touchmove', handleMobileScrollMove, { passive: false });
+        canvasContainer.addEventListener('touchend', handleMobileScrollEnd);
+        
+        // Update canvas container styles for mobile
+        if (isMobileDevice()) {
+            canvasContainer.style.overflow = 'auto';
+            canvasContainer.style.webkitOverflowScrolling = 'touch';
+            canvasContainer.style.cursor = 'grab';
+            
+            // Add scroll indicators for better UX
+            addScrollIndicators();
+        }
+    }
+    
+    // NEW: Check if device is mobile
+    function isMobileDevice() {
+        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
+               window.innerWidth <= 768;
+    }
+    
+    // NEW: Add scroll indicators for mobile
+    function addScrollIndicators() {
+        // Remove existing indicators
+        const existingIndicators = document.querySelectorAll('.scroll-indicator');
+        existingIndicators.forEach(indicator => indicator.remove());
+        
+        // Add horizontal scroll indicator
+        const horizontalIndicator = document.createElement('div');
+        horizontalIndicator.className = 'scroll-indicator horizontal';
+        horizontalIndicator.innerHTML = '← Scroll →';
+        horizontalIndicator.style.cssText = `
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            z-index: 100;
+            pointer-events: none;
+            animation: pulse 2s infinite;
+        `;
+        
+        // Add vertical scroll indicator
+        const verticalIndicator = document.createElement('div');
+        verticalIndicator.className = 'scroll-indicator vertical';
+        verticalIndicator.innerHTML = '↑ Scroll ↓';
+        verticalIndicator.style.cssText = `
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%) rotate(-90deg);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            z-index: 100;
+            pointer-events: none;
+            animation: pulse 2s infinite;
+            transform-origin: center;
+        `;
+        
+        // Add CSS for pulse animation
+        if (!document.getElementById('scroll-indicator-styles')) {
+            const styles = document.createElement('style');
+            styles.id = 'scroll-indicator-styles';
+            styles.textContent = `
+                @keyframes pulse {
+                    0%, 100% { opacity: 0.7; }
+                    50% { opacity: 1; }
+                }
+                .canvas-container::-webkit-scrollbar {
+                    width: 12px;
+                    height: 12px;
+                }
+                .canvas-container::-webkit-scrollbar-thumb {
+                    background: rgba(52, 152, 219, 0.8);
+                    border-radius: 6px;
+                    border: 2px solid transparent;
+                    background-clip: content-box;
+                }
+                .canvas-container::-webkit-scrollbar-thumb:hover {
+                    background: rgba(41, 128, 185, 0.8);
+                    background-clip: content-box;
+                }
+                .canvas-container::-webkit-scrollbar-track {
+                    background: rgba(0,0,0,0.1);
+                    border-radius: 6px;
+                }
+                .mobile-scroll-handle {
+                    position: absolute;
+                    background: rgba(52, 152, 219, 0.3);
+                    border: 2px solid rgba(52, 152, 219, 0.8);
+                    border-radius: 50%;
+                    z-index: 50;
+                    pointer-events: none;
+                    transition: all 0.2s ease;
+                }
+                .mobile-scroll-handle.active {
+                    background: rgba(52, 152, 219, 0.6);
+                    transform: scale(1.1);
+                }
+            `;
+            document.head.appendChild(styles);
+        }
+        
+        canvasContainer.appendChild(horizontalIndicator);
+        canvasContainer.appendChild(verticalIndicator);
+        
+        // Remove indicators after 5 seconds
+        setTimeout(() => {
+            horizontalIndicator.remove();
+            verticalIndicator.remove();
+        }, 5000);
+    }
+    
+    // NEW: Handle mobile scroll start
+    function handleMobileScrollStart(e) {
+        if (e.touches.length !== 1 || currentTool === 'brush' || currentTool === 'eraser') return;
+        
+        e.preventDefault();
+        isMobileScrolling = true;
+        
+        const touch = e.touches[0];
+        scrollStartX = touch.clientX;
+        scrollStartY = touch.clientY;
+        scrollOffsetX = canvasContainer.scrollLeft;
+        scrollOffsetY = canvasContainer.scrollTop;
+        
+        // Show scroll handle
+        showScrollHandle(touch.clientX, touch.clientY);
+        
+        canvasContainer.style.cursor = 'grabbing';
+    }
+    
+    // NEW: Handle mobile scroll move
+    function handleMobileScrollMove(e) {
+        if (!isMobileScrolling || e.touches.length !== 1) return;
+        
+        e.preventDefault();
+        
+        const touch = e.touches[0];
+        const deltaX = scrollStartX - touch.clientX;
+        const deltaY = scrollStartY - touch.clientY;
+        
+        // Update scroll position
+        canvasContainer.scrollLeft = scrollOffsetX + deltaX;
+        canvasContainer.scrollTop = scrollOffsetY + deltaY;
+        
+        // Update scroll handle position
+        updateScrollHandle(touch.clientX, touch.clientY);
+    }
+    
+    // NEW: Handle mobile scroll end
+    function handleMobileScrollEnd() {
+        isMobileScrolling = false;
+        canvasContainer.style.cursor = 'grab';
+        
+        // Hide scroll handle
+        hideScrollHandle();
+    }
+    
+    // NEW: Show big scroll handle for mobile
+    function showScrollHandle(x, y) {
+        hideScrollHandle();
+        
+        const handle = document.createElement('div');
+        handle.className = 'mobile-scroll-handle';
+        handle.style.cssText = `
+            position: fixed;
+            left: ${x - 30}px;
+            top: ${y - 30}px;
+            width: 60px;
+            height: 60px;
+            background: rgba(52, 152, 219, 0.3);
+            border: 3px solid rgba(52, 152, 219, 0.8);
+            border-radius: 50%;
+            z-index: 1000;
+            pointer-events: none;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        `;
+        
+        document.body.appendChild(handle);
+        
+        // Add active state after a delay
+        setTimeout(() => {
+            handle.style.background = 'rgba(52, 152, 219, 0.6)';
+            handle.style.transform = 'scale(1.1)';
+        }, 50);
+    }
+    
+    // NEW: Update scroll handle position
+    function updateScrollHandle(x, y) {
+        const handle = document.querySelector('.mobile-scroll-handle');
+        if (handle) {
+            handle.style.left = `${x - 30}px`;
+            handle.style.top = `${y - 30}px`;
+        }
+    }
+    
+    // NEW: Hide scroll handle
+    function hideScrollHandle() {
+        const handle = document.querySelector('.mobile-scroll-handle');
+        if (handle) {
+            handle.remove();
+        }
     }
     
     // Touch event handlers for mobile
@@ -524,6 +754,11 @@ document.addEventListener('DOMContentLoaded', function() {
     function resetZoom() {
         scale = 1;
         updateCanvasTransform();
+        // Reset scroll position when zoom is reset
+        if (canvasContainer) {
+            canvasContainer.scrollLeft = 0;
+            canvasContainer.scrollTop = 0;
+        }
     }
 
     function updateCanvasTransform() {
@@ -534,6 +769,11 @@ document.addEventListener('DOMContentLoaded', function() {
         // Force reflow
         houseCanvas.offsetHeight;
         tempCanvas.offsetHeight;
+        
+        // Update mobile scroll setup when zoom changes
+        if (isMobileDevice()) {
+            setupMobileScroll();
+        }
     }
 
     function updateZoomDisplay() {
@@ -963,6 +1203,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 // Reset zoom
                 resetZoom();
+                
+                // Setup mobile scroll for new image
+                setupMobileScroll();
             };
             img.src = event.target.result;
         };
@@ -988,6 +1231,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Reset zoom
         resetZoom();
+        
+        // Setup mobile scroll
+        setupMobileScroll();
     }
     
     // Draw sample house 1 (for demo purposes) - FIXED: Use clean settings
@@ -1165,6 +1411,9 @@ document.addEventListener('DOMContentLoaded', function() {
             originalImageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
         }
         alignTempCanvas(); // ensure overlay alignment after resize
+        
+        // Update mobile scroll
+        setupMobileScroll();
     }
     
     // Align tempCanvas position/size so overlay drawing matches houseCanvas exactly
@@ -1734,6 +1983,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Reset zoom
         resetZoom();
+        
+        // Reset scroll position
+        if (canvasContainer) {
+            canvasContainer.scrollLeft = 0;
+            canvasContainer.scrollTop = 0;
+        }
     }
     
     // NEW: Show color selection popup before download (smaller size)
