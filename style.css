@@ -364,7 +364,11 @@
             width: 100%;
             padding: 15px;
             box-sizing: border-box;
-            touch-action: none;
+            touch-action: pan-x pan-y;
+            
+            /* Force scrollbars to always be visible */
+            overflow-y: scroll;
+            overflow-x: scroll;
             
             /* Enhanced Mobile Scroll Styles */
             -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
@@ -372,49 +376,61 @@
             scrollbar-color: rgba(52, 152, 219, 0.8) rgba(0, 0, 0, 0.1); /* Scrollbar colors */
         }
 
-        /* Custom Scrollbar for Webkit browsers (Chrome, Safari, Edge) */
+        /* Custom Scrollbar for Webkit browsers (Chrome, Safari, Edge) - MOBILE FOCUS */
         .canvas-container::-webkit-scrollbar {
-            width: 20px; /* Thick scrollbar */
-            height: 20px; /* Thick horizontal scrollbar */
+            width: 25px; /* Extra thick scrollbar for mobile */
+            height: 25px; /* Extra thick horizontal scrollbar for mobile */
         }
 
         .canvas-container::-webkit-scrollbar-track {
             background: rgba(0, 0, 0, 0.1);
-            border-radius: 10px;
-            margin: 4px;
-            border: 2px solid transparent;
-            background-clip: content-box;
-        }
-
-        .canvas-container::-webkit-scrollbar-thumb {
-            background: rgba(52, 152, 219, 0.8);
-            border-radius: 10px;
-            border: 4px solid transparent;
-            background-clip: content-box;
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-
-        .canvas-container::-webkit-scrollbar-thumb:hover {
-            background: rgba(41, 128, 185, 0.9);
+            border-radius: 12px;
+            margin: 2px;
             border: 3px solid transparent;
             background-clip: content-box;
         }
 
-        .canvas-container::-webkit-scrollbar-thumb:active {
-            background: rgba(21, 67, 96, 0.9);
-            border: 2px solid transparent;
+        .canvas-container::-webkit-scrollbar-thumb {
+            background: rgba(52, 152, 219, 0.9);
+            border-radius: 12px;
+            border: 5px solid transparent;
+            background-clip: content-box;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            min-height: 60px; /* Minimum thumb size */
+            min-width: 60px; /* Minimum thumb size */
+        }
+
+        .canvas-container::-webkit-scrollbar-thumb:hover {
+            background: rgba(41, 128, 185, 1);
+            border: 4px solid transparent;
             background-clip: content-box;
         }
 
+        .canvas-container::-webkit-scrollbar-thumb:active {
+            background: rgba(21, 67, 96, 1);
+            border: 3px solid transparent;
+            background-clip: content-box;
+            transform: scale(1.05);
+        }
+
+        .canvas-container::-webkit-scrollbar-thumb:vertical {
+            min-height: 80px; /* Even larger minimum for vertical thumb */
+        }
+
+        .canvas-container::-webkit-scrollbar-thumb:horizontal {
+            min-width: 80px; /* Even larger minimum for horizontal thumb */
+        }
+
         .canvas-container::-webkit-scrollbar-corner {
-            background: transparent;
+            background: rgba(0, 0, 0, 0.1);
+            border-radius: 0 0 5px 0;
         }
 
         /* Scrollbar for Firefox */
         .canvas-container {
             scrollbar-width: thick;
-            scrollbar-color: rgba(52, 152, 219, 0.8) rgba(0, 0, 0, 0.1);
+            scrollbar-color: rgba(52, 152, 219, 0.9) rgba(0, 0, 0, 0.1);
         }
 
         .canvas-container.move-mode {
@@ -954,20 +970,44 @@
     
     .canvas-container {
         padding: 10px;
-        /* Enhanced mobile scroll */
-        overflow: auto;
-        -webkit-overflow-scrolling: touch;
+        /* Force scrollbars to be always visible on mobile */
+        overflow-y: scroll !important;
+        overflow-x: scroll !important;
     }
     
-    /* Even thicker scrollbars for mobile */
+    /* Even thicker scrollbars for mobile touch */
     .canvas-container::-webkit-scrollbar {
-        width: 24px;
-        height: 24px;
+        width: 30px; /* Very thick for mobile */
+        height: 30px; /* Very thick for mobile */
+    }
+    
+    .canvas-container::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.15);
+        border-radius: 15px;
+        margin: 3px;
+        border: 4px solid transparent;
+        background-clip: content-box;
     }
     
     .canvas-container::-webkit-scrollbar-thumb {
+        background: rgba(52, 152, 219, 0.95);
+        border-radius: 15px;
         border: 6px solid transparent;
         background-clip: content-box;
+        min-height: 100px; /* Large minimum for easy touching */
+        min-width: 100px; /* Large minimum for easy touching */
+    }
+    
+    .canvas-container::-webkit-scrollbar-thumb:active {
+        background: rgba(21, 67, 96, 1);
+        border: 5px solid transparent;
+        transform: scale(1.1);
+    }
+    
+    /* Firefox mobile */
+    .canvas-container {
+        scrollbar-width: auto;
+        scrollbar-color: rgba(52, 152, 219, 0.95) rgba(0, 0, 0, 0.15);
     }
     
     .tools-section, .preview-section {
@@ -1084,13 +1124,15 @@
     
     /* Extra thick scrollbars for very small screens */
     .canvas-container::-webkit-scrollbar {
-        width: 28px;
-        height: 28px;
+        width: 35px; /* Extra thick for very small screens */
+        height: 35px; /* Extra thick for very small screens */
     }
     
     .canvas-container::-webkit-scrollbar-thumb {
         border: 8px solid transparent;
         background-clip: content-box;
+        min-height: 120px; /* Very large for easy touch */
+        min-width: 120px; /* Very large for easy touch */
     }
 }
 
