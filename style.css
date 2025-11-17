@@ -392,7 +392,7 @@
 
         .canvas-container::-webkit-scrollbar-thumb {
             background: rgba(52, 152, 219, 0.9);
-            border-radius: 12px;
+            border-radius: 20px;
             border: 5px solid transparent;
             background-clip: content-box;
             transition: all 0.3s ease;
@@ -672,7 +672,12 @@
         .btn-secondary:hover {
     background: #7f8c8d;
 }
-
+.scrollable-container {
+  overflow-y: scroll;
+  -webkit-overflow-scrolling: touch; /* Smooth scrolling on iOS */
+  /* Optional: set max-height or height */
+  max-height: 400px;
+}
         footer {
             text-align: center;
             margin-top: 40px;
