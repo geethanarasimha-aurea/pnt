@@ -428,27 +428,30 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // NEW: Setup mobile scroll functionality with big touch points
-    function setupMobileScroll() {
-        // Remove existing scroll handlers if any
-        canvasContainer.removeEventListener('touchstart', handleMobileScrollStart);
-        canvasContainer.removeEventListener('touchmove', handleMobileScrollMove);
-        canvasContainer.removeEventListener('touchend', handleMobileScrollEnd);
-        
-        // Add mobile scroll handlers
-        canvasContainer.addEventListener('touchstart', handleMobileScrollStart, { passive: false });
-        canvasContainer.addEventListener('touchmove', handleMobileScrollMove, { passive: false });
-        canvasContainer.addEventListener('touchend', handleMobileScrollEnd);
-        
-        // Update canvas container styles for mobile
-        if (isMobileDevice()) {
-            canvasContainer.style.overflow = 'auto';
-            canvasContainer.style.webkitOverflowScrolling = 'touch';
-            canvasContainer.style.cursor = 'grab';
-            
-            // Add scroll indicators for better UX
-            addScrollIndicators();
-        }
-    }
+	   function setupMobileScroll() {
+		// Remove existing scroll handlers if any
+		canvasContainer.removeEventListener('touchstart', handleMobileScrollStart);
+		canvasContainer.removeEventListener('touchmove', handleMobileScrollMove);
+		canvasContainer.removeEventListener('touchend', handleMobileScrollEnd);
+		
+		// Add mobile scroll handlers
+		canvasContainer.addEventListener('touchstart', handleMobileScrollStart, { passive: false });
+		canvasContainer.addEventListener('touchmove', handleMobileScrollMove, { passive: false });
+		canvasContainer.addEventListener('touchend', handleMobileScrollEnd);
+		
+		// Update canvas container styles for mobile
+		if (isMobileDevice()) {
+			canvasContainer.style.overflow = 'auto';
+			canvasContainer.style.webkitOverflowScrolling = 'touch';
+			canvasContainer.style.cursor = 'grab';
+			
+			// Add scroll indicators for better UX
+			addScrollIndicators();
+			
+			// Make scrollbars always visible on mobile
+			canvasContainer.style.scrollbarWidth = 'auto';
+		}
+	}
     
     // NEW: Check if device is mobile
     function isMobileDevice() {
@@ -458,195 +461,188 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // NEW: Add scroll indicators for mobile
     function addScrollIndicators() {
-        // Remove existing indicators
-        const existingIndicators = document.querySelectorAll('.scroll-indicator');
-        existingIndicators.forEach(indicator => indicator.remove());
-        
-        // Add horizontal scroll indicator
+    // Remove existing indicators
+    const existingIndicators = document.querySelectorAll('.scroll-indicator');
+    existingIndicators.forEach(indicator => indicator.remove());
+    
+    // Check if canvas is scrollable
+    const isScrollableX = houseCanvas.width > canvasContainer.clientWidth;
+    const isScrollableY = houseCanvas.height > canvasContainer.clientHeight;
+    
+    // Add horizontal scroll indicator if needed
+    if (isScrollableX) {
         const horizontalIndicator = document.createElement('div');
         horizontalIndicator.className = 'scroll-indicator horizontal';
-        horizontalIndicator.innerHTML = '← Scroll →';
+        horizontalIndicator.innerHTML = '← Scroll Horizontally →';
         horizontalIndicator.style.cssText = `
             position: absolute;
-            bottom: 10px;
+            bottom: 15px;
             left: 50%;
             transform: translateX(-50%);
             background: rgba(0,0,0,0.7);
             color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 12px;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 14px;
             z-index: 100;
             pointer-events: none;
             animation: pulse 2s infinite;
+            font-weight: bold;
         `;
-        
-        // Add vertical scroll indicator
+        canvasContainer.appendChild(horizontalIndicator);
+    }
+    
+    // Add vertical scroll indicator if needed
+    if (isScrollableY) {
         const verticalIndicator = document.createElement('div');
         verticalIndicator.className = 'scroll-indicator vertical';
-        verticalIndicator.innerHTML = '↑ Scroll ↓';
+        verticalIndicator.innerHTML = '↑ Scroll Vertically ↓';
         verticalIndicator.style.cssText = `
             position: absolute;
-            right: 10px;
+            right: 15px;
             top: 50%;
             transform: translateY(-50%) rotate(-90deg);
             background: rgba(0,0,0,0.7);
             color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 12px;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 14px;
             z-index: 100;
             pointer-events: none;
             animation: pulse 2s infinite;
+            font-weight: bold;
             transform-origin: center;
         `;
-        
-        // Add CSS for pulse animation
-        if (!document.getElementById('scroll-indicator-styles')) {
-            const styles = document.createElement('style');
-            styles.id = 'scroll-indicator-styles';
-            styles.textContent = `
-                @keyframes pulse {
-                    0%, 100% { opacity: 0.7; }
-                    50% { opacity: 1; }
-                }
-                .canvas-container::-webkit-scrollbar {
-                    width: 12px;
-                    height: 12px;
-                }
-                .canvas-container::-webkit-scrollbar-thumb {
-                    background: rgba(52, 152, 219, 0.8);
-                    border-radius: 6px;
-                    border: 2px solid transparent;
-                    background-clip: content-box;
-                }
-                .canvas-container::-webkit-scrollbar-thumb:hover {
-                    background: rgba(41, 128, 185, 0.8);
-                    background-clip: content-box;
-                }
-                .canvas-container::-webkit-scrollbar-track {
-                    background: rgba(0,0,0,0.1);
-                    border-radius: 6px;
-                }
-                .mobile-scroll-handle {
-                    position: absolute;
-                    background: rgba(52, 152, 219, 0.3);
-                    border: 2px solid rgba(52, 152, 219, 0.8);
-                    border-radius: 50%;
-                    z-index: 50;
-                    pointer-events: none;
-                    transition: all 0.2s ease;
-                }
-                .mobile-scroll-handle.active {
-                    background: rgba(52, 152, 219, 0.6);
-                    transform: scale(1.1);
-                }
-            `;
-            document.head.appendChild(styles);
-        }
-        
-        canvasContainer.appendChild(horizontalIndicator);
         canvasContainer.appendChild(verticalIndicator);
-        
-        // Remove indicators after 5 seconds
-        setTimeout(() => {
-            horizontalIndicator.remove();
-            verticalIndicator.remove();
-        }, 5000);
     }
+    
+    // Remove indicators after 5 seconds or on first scroll
+    const removeIndicators = () => {
+        const indicators = document.querySelectorAll('.scroll-indicator');
+        indicators.forEach(indicator => indicator.remove());
+        canvasContainer.removeEventListener('scroll', removeIndicators);
+        canvasContainer.removeEventListener('touchstart', removeIndicators);
+    };
+    
+    setTimeout(removeIndicators, 5000);
+    canvasContainer.addEventListener('scroll', removeIndicators);
+    canvasContainer.addEventListener('touchstart', removeIndicators);
+}
     
     // NEW: Handle mobile scroll start
-    function handleMobileScrollStart(e) {
-        if (e.touches.length !== 1 || currentTool === 'brush' || currentTool === 'eraser') return;
-        
-        e.preventDefault();
-        isMobileScrolling = true;
-        
-        const touch = e.touches[0];
-        scrollStartX = touch.clientX;
-        scrollStartY = touch.clientY;
-        scrollOffsetX = canvasContainer.scrollLeft;
-        scrollOffsetY = canvasContainer.scrollTop;
-        
-        // Show scroll handle
-        showScrollHandle(touch.clientX, touch.clientY);
-        
-        canvasContainer.style.cursor = 'grabbing';
-    }
+	   function handleMobileScrollStart(e) {
+		if (e.touches.length !== 1 || currentTool === 'brush' || currentTool === 'eraser') return;
+		
+		e.preventDefault();
+		isMobileScrolling = true;
+		
+		const touch = e.touches[0];
+		scrollStartX = touch.clientX;
+		scrollStartY = touch.clientY;
+		scrollOffsetX = canvasContainer.scrollLeft;
+		scrollOffsetY = canvasContainer.scrollTop;
+		
+		// Show enhanced scroll handle
+		showEnhancedScrollHandle(touch.clientX, touch.clientY);
+		
+		canvasContainer.style.cursor = 'grabbing';
+	}
     
-    // NEW: Handle mobile scroll move
-    function handleMobileScrollMove(e) {
-        if (!isMobileScrolling || e.touches.length !== 1) return;
-        
-        e.preventDefault();
-        
-        const touch = e.touches[0];
-        const deltaX = scrollStartX - touch.clientX;
-        const deltaY = scrollStartY - touch.clientY;
-        
-        // Update scroll position
-        canvasContainer.scrollLeft = scrollOffsetX + deltaX;
-        canvasContainer.scrollTop = scrollOffsetY + deltaY;
-        
-        // Update scroll handle position
-        updateScrollHandle(touch.clientX, touch.clientY);
-    }
+    // Enhanced mobile scroll move
+	function handleMobileScrollMove(e) {
+		if (!isMobileScrolling || e.touches.length !== 1) return;
+		
+		e.preventDefault();
+		
+		const touch = e.touches[0];
+		const deltaX = scrollStartX - touch.clientX;
+		const deltaY = scrollStartY - touch.clientY;
+		
+		// Update scroll position with momentum
+		canvasContainer.scrollLeft = scrollOffsetX + deltaX;
+		canvasContainer.scrollTop = scrollOffsetY + deltaY;
+		
+		// Update scroll handle position
+		updateScrollHandle(touch.clientX, touch.clientY);
+	}
     
-    // NEW: Handle mobile scroll end
-    function handleMobileScrollEnd() {
-        isMobileScrolling = false;
-        canvasContainer.style.cursor = 'grab';
-        
-        // Hide scroll handle
-        hideScrollHandle();
-    }
+    // Enhanced mobile scroll end
+	function handleMobileScrollEnd() {
+		isMobileScrolling = false;
+		canvasContainer.style.cursor = 'grab';
+		
+		// Hide scroll handle with fade out
+		hideScrollHandleWithAnimation();
+	}
     
     // NEW: Show big scroll handle for mobile
-    function showScrollHandle(x, y) {
-        hideScrollHandle();
-        
-        const handle = document.createElement('div');
-        handle.className = 'mobile-scroll-handle';
-        handle.style.cssText = `
-            position: fixed;
-            left: ${x - 30}px;
-            top: ${y - 30}px;
-            width: 60px;
-            height: 60px;
-            background: rgba(52, 152, 219, 0.3);
-            border: 3px solid rgba(52, 152, 219, 0.8);
-            border-radius: 50%;
-            z-index: 1000;
-            pointer-events: none;
-            transition: all 0.2s ease;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        `;
-        
-        document.body.appendChild(handle);
-        
-        // Add active state after a delay
-        setTimeout(() => {
-            handle.style.background = 'rgba(52, 152, 219, 0.6)';
-            handle.style.transform = 'scale(1.1)';
-        }, 50);
-    }
+	   function showEnhancedScrollHandle(x, y) {
+		hideScrollHandle();
+		
+		const handle = document.createElement('div');
+		handle.className = 'mobile-scroll-handle';
+		handle.innerHTML = '⇲'; // Scroll icon
+		handle.style.cssText = `
+			position: fixed;
+			left: ${x - 30}px;
+			top: ${y - 30}px;
+			width: 60px;
+			height: 60px;
+			background: rgba(52, 152, 219, 0.3);
+			border: 3px solid rgba(52, 152, 219, 0.8);
+			border-radius: 50%;
+			z-index: 1000;
+			pointer-events: none;
+			transition: all 0.2s ease;
+			box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			color: white;
+			font-weight: bold;
+			font-size: 20px;
+		`;
+		
+		document.body.appendChild(handle);
+		
+		// Add active state after a delay
+		setTimeout(() => {
+			handle.style.background = 'rgba(52, 152, 219, 0.6)';
+			handle.style.transform = 'scale(1.1)';
+			handle.style.borderWidth = '4px';
+		}, 50);
+	}
     
     // NEW: Update scroll handle position
     function updateScrollHandle(x, y) {
-        const handle = document.querySelector('.mobile-scroll-handle');
-        if (handle) {
-            handle.style.left = `${x - 30}px`;
-            handle.style.top = `${y - 30}px`;
-        }
+    const handle = document.querySelector('.mobile-scroll-handle');
+    if (handle) {
+        handle.style.left = `${x - 30}px`;
+        handle.style.top = `${y - 30}px`;
     }
+}
     
     // NEW: Hide scroll handle
     function hideScrollHandle() {
-        const handle = document.querySelector('.mobile-scroll-handle');
-        if (handle) {
-            handle.remove();
-        }
+    const handle = document.querySelector('.mobile-scroll-handle');
+    if (handle) {
+        handle.remove();
     }
+}
+
+// Enhanced hide scroll handle with animation
+function hideScrollHandleWithAnimation() {
+    const handle = document.querySelector('.mobile-scroll-handle');
+    if (handle) {
+        handle.style.opacity = '0';
+        handle.style.transform = 'scale(0.5)';
+        setTimeout(() => {
+            if (handle.parentNode) {
+                handle.remove();
+            }
+        }, 200);
+    }
+}
     
     // Touch event handlers for mobile
     function handleTouchStart(e) {
