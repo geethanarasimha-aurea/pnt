@@ -438,91 +438,128 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Enhanced Scroll Bar Drag Functionality for Mobile
     function setupScrollBarDrag() {
-        if (!isMobileDevice()) return;
-        
-        const canvasContainer = document.getElementById('canvasContainer');
-        if (!canvasContainer) return;
-        
-        // Remove existing event listeners
-        canvasContainer.removeEventListener('touchstart', handleScrollBarTouchStart);
-        document.removeEventListener('touchmove', handleScrollBarTouchMove);
-        document.removeEventListener('touchend', handleScrollBarTouchEnd);
-        
-        // Add new event listeners
-        canvasContainer.addEventListener('touchstart', handleScrollBarTouchStart, { passive: false });
-    }
+    if (!isMobileDevice()) return;
     
-    function handleScrollBarTouchStart(e) {
-        if (currentTool === 'brush' || currentTool === 'eraser') return;
-        
-        const rect = canvasContainer.getBoundingClientRect();
-        const touchX = e.touches[0].clientX;
-        const touchY = e.touches[0].clientY;
-        
-        // Check if touch is on vertical scrollbar area (right side)
-        const verticalScrollbarLeft = rect.right - 40; // Scrollbar width + padding
-        if (touchX >= verticalScrollbarLeft && touchX <= rect.right && touchY >= rect.top && touchY <= rect.bottom) {
-            isDraggingScrollBar = true;
-            scrollBarType = 'vertical';
-            scrollStartPosition = touchY;
-            scrollStartValue = canvasContainer.scrollTop;
-            e.preventDefault();
-            
-            // Add global event listeners
-            document.addEventListener('touchmove', handleScrollBarTouchMove, { passive: false });
-            document.addEventListener('touchend', handleScrollBarTouchEnd);
-            return;
-        }
-        
-        // Check if touch is on horizontal scrollbar area (bottom side)
-        const horizontalScrollbarTop = rect.bottom - 40; // Scrollbar height + padding
-        if (touchX >= rect.left && touchX <= rect.right && touchY >= horizontalScrollbarTop && touchY <= rect.bottom) {
-            isDraggingScrollBar = true;
-            scrollBarType = 'horizontal';
-            scrollStartPosition = touchX;
-            scrollStartValue = canvasContainer.scrollLeft;
-            e.preventDefault();
-            
-            // Add global event listeners
-            document.addEventListener('touchmove', handleScrollBarTouchMove, { passive: false });
-            document.addEventListener('touchend', handleScrollBarTouchEnd);
-            return;
-        }
-    }
+    const canvasContainer = document.getElementById('canvasContainer');
+    if (!canvasContainer) return;
     
-    function handleScrollBarTouchMove(e) {
-        if (!isDraggingScrollBar) return;
-        
+    // Remove existing event listeners
+    canvasContainer.removeEventListener('touchstart', handleScrollBarTouchStart);
+    document.removeEventListener('touchmove', handleScrollBarTouchMove);
+    document.removeEventListener('touchend', handleScrollBarTouchEnd);
+    
+    // Add new event listeners
+    canvasContainer.addEventListener('touchstart', handleScrollBarTouchStart, { passive: false });
+}
+    
+function handleScrollBarTouchStart(e) {
+    // Don't interfere with painting tools
+    if (currentTool === 'brush' || currentTool === 'eraser') return;
+    
+    const rect = canvasContainer.getBoundingClientRect();
+    const touchX = e.touches[0].clientX;
+    const touchY = e.touches[0].clientY;
+    
+    // Calculate scrollbar areas with larger touch targets
+    const scrollbarSize = 40; // Increased for better touch
+    const verticalScrollbarLeft = rect.right - scrollbarSize;
+    const horizontalScrollbarTop = rect.bottom - scrollbarSize;
+    
+    // Check if touch is on vertical scrollbar area (right 40px)
+    if (touchX >= verticalScrollbarLeft && touchX <= rect.right) {
+        isDraggingScrollBar = true;
+        scrollBarType = 'vertical';
+        scrollStartPosition = touchY;
+        scrollStartValue = canvasContainer.scrollTop;
         e.preventDefault();
+        e.stopPropagation();
         
-        const touchX = e.touches[0].clientX;
-        const touchY = e.touches[0].clientY;
-        const rect = canvasContainer.getBoundingClientRect();
+        console.log('Vertical scrollbar drag started');
         
-        if (scrollBarType === 'vertical') {
-            const deltaY = touchY - scrollStartPosition;
-            // Calculate scroll ratio based on container and content size
-            const contentHeight = houseCanvas.height * scale;
-            const containerHeight = rect.height;
-            const maxScrollY = Math.max(0, contentHeight - containerHeight);
-            const scrollRatio = maxScrollY / (containerHeight - 40); // Adjust for scrollbar size
-            
+        // Add global event listeners
+        document.addEventListener('touchmove', handleScrollBarTouchMove, { passive: false });
+        document.addEventListener('touchend', handleScrollBarTouchEnd);
+        return;
+    }
+    
+    // Check if touch is on horizontal scrollbar area (bottom 40px)
+    if (touchY >= horizontalScrollbarTop && touchY <= rect.bottom) {
+        isDraggingScrollBar = true;
+        scrollBarType = 'horizontal';
+        scrollStartPosition = touchX;
+        scrollStartValue = canvasContainer.scrollLeft;
+        e.preventDefault();
+        e.stopPropagation();
+        
+        console.log('Horizontal scrollbar drag started');
+        
+        // Add global event listeners
+        document.addEventListener('touchmove', handleScrollBarTouchMove, { passive: false });
+        document.addEventListener('touchend', handleScrollBarTouchEnd);
+        return;
+    }
+}
+    
+function handleScrollBarTouchMove(e) {
+    if (!isDraggingScrollBar) return;
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const touchX = e.touches[0].clientX;
+    const touchY = e.touches[0].clientY;
+    const rect = canvasContainer.getBoundingClientRect();
+    
+    if (scrollBarType === 'vertical') {
+        const deltaY = touchY - scrollStartPosition;
+        
+        // Calculate scroll parameters
+        const contentHeight = houseCanvas.height * scale;
+        const containerHeight = rect.height;
+        const maxScrollTop = Math.max(0, contentHeight - containerHeight);
+        
+        if (maxScrollTop > 0) {
+            // Calculate scroll ratio (how much content moves per pixel of drag)
+            const scrollRatio = maxScrollTop / (containerHeight - 40);
             const scrollDelta = deltaY * scrollRatio;
-            const newScrollTop = scrollStartValue + scrollDelta;
-            canvasContainer.scrollTop = Math.max(0, Math.min(maxScrollY, newScrollTop));
-        } else if (scrollBarType === 'horizontal') {
-            const deltaX = touchX - scrollStartPosition;
-            // Calculate scroll ratio based on container and content size
-            const contentWidth = houseCanvas.width * scale;
-            const containerWidth = rect.width;
-            const maxScrollX = Math.max(0, contentWidth - containerWidth);
-            const scrollRatio = maxScrollX / (containerWidth - 40); // Adjust for scrollbar size
+            const newScrollTop = Math.max(0, Math.min(maxScrollTop, scrollStartValue + scrollDelta));
             
+            canvasContainer.scrollTop = newScrollTop;
+            console.log('Vertical scroll:', newScrollTop);
+        }
+        
+    } else if (scrollBarType === 'horizontal') {
+        const deltaX = touchX - scrollStartPosition;
+        
+        // Calculate scroll parameters
+        const contentWidth = houseCanvas.width * scale;
+        const containerWidth = rect.width;
+        const maxScrollLeft = Math.max(0, contentWidth - containerWidth);
+        
+        if (maxScrollLeft > 0) {
+            // Calculate scroll ratio (how much content moves per pixel of drag)
+            const scrollRatio = maxScrollLeft / (containerWidth - 40);
             const scrollDelta = deltaX * scrollRatio;
-            const newScrollLeft = scrollStartValue + scrollDelta;
-            canvasContainer.scrollLeft = Math.max(0, Math.min(maxScrollX, newScrollLeft));
+            const newScrollLeft = Math.max(0, Math.min(maxScrollLeft, scrollStartValue + scrollDelta));
+            
+            canvasContainer.scrollLeft = newScrollLeft;
+            console.log('Horizontal scroll:', newScrollLeft);
         }
     }
+}
+
+function handleScrollBarTouchEnd(e) {
+    if (!isDraggingScrollBar) return;
+    
+    isDraggingScrollBar = false;
+    scrollBarType = null;
+    
+    console.log('Scrollbar drag ended');
+    
+    // Remove global event listeners
+    document.removeEventListener('touchmove', handleScrollBarTouchMove);
+    document.removeEventListener('touchend', handleScrollBarTouchEnd);
+}
     
     function handleScrollBarTouchEnd() {
         isDraggingScrollBar = false;
@@ -667,9 +704,23 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     // NEW: Handle mobile scroll start
-    function handleMobileScrollStart(e) {
-        if (e.touches.length !== 1 || currentTool === 'brush' || currentTool === 'eraser' || isDraggingScrollBar) return;
-        
+function handleMobileScrollStart(e) {
+    // Don't start regular scrolling if we're dragging scrollbars
+    if (isDraggingScrollBar) return;
+    
+    if (e.touches.length !== 1 || currentTool === 'brush' || currentTool === 'eraser') return;
+    
+    const rect = canvasContainer.getBoundingClientRect();
+    const touchX = e.touches[0].clientX;
+    const touchY = e.touches[0].clientY;
+    
+    // Check if touch is NOT on scrollbar areas
+    const scrollbarSize = 40;
+    const isOnVerticalScrollbar = touchX >= (rect.right - scrollbarSize);
+    const isOnHorizontalScrollbar = touchY >= (rect.bottom - scrollbarSize);
+    
+    // Only allow regular scrolling if not on scrollbars
+    if (!isOnVerticalScrollbar && !isOnHorizontalScrollbar) {
         e.preventDefault();
         isMobileScrolling = true;
         
@@ -684,6 +735,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         canvasContainer.style.cursor = 'grabbing';
     }
+}
     
     // NEW: Handle mobile scroll move
     function handleMobileScrollMove(e) {
