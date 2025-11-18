@@ -94,11 +94,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Zoom state
     let scale = 1;
 
-    // Touch gesture state
+    // Touch gesture state for painting
     let isTouchPainting = false;
     let touchStartX, touchStartY;
     
-    // Mobile scroll state (single finger scroll mode when not painting tools)
+    // Mobile scroll state
     let isMobileScrolling = false;
     let scrollStartX, scrollStartY;
     let scrollOffsetX = 0, scrollOffsetY = 0;
@@ -314,19 +314,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     opt.classList.remove('active');
                 });
                 this.classList.add('active');
-                currentShape = this.dataset.shape;
-                currentProject.settings.currentShape = currentShape;
-            });
-        });
-        
-        // Eraser dropdown options
-        document.querySelectorAll('.brush-option[data-eraser]').forEach(option => {
-            option.addEventListener('click', function() {
-                document.querySelectorAll('.brush-option[data-eraser]').forEach(opt => {
-                    opt.classList.remove('active');
-                });
-                this.classList.add('active');
-                currentEraser = this.dataset.eraser;
+                if (this.dataset.shape) {
+                    currentShape = this.dataset.shape;
+                    currentProject.settings.currentShape = currentShape;
+                }
+                if (this.dataset.eraser) {
+                    currentEraser = this.dataset.eraser;
+                }
             });
         });
         
@@ -378,12 +372,12 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.addEventListener('click', handleCanvasClick);
         houseCanvas.addEventListener('dblclick', handleCanvasDoubleClick);
         
-        // Touch events for painting on mobile (single finger only)
+        // Touch events for mobile - single-finger = brush/eraser, two-finger = pan
         houseCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         houseCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         houseCanvas.addEventListener('touchend', handleTouchEnd);
         
-        // Enhanced Auto-Select events
+        // Enhanced Auto-Select drag events (mouse)
         houseCanvas.addEventListener('mousedown', startDragSelection);
         houseCanvas.addEventListener('mousemove', dragSelection);
         houseCanvas.addEventListener('mouseup', stopDragSelection);
@@ -437,7 +431,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function setupTwoFingerScroll() {
         if (!isMobileDevice()) return;
         
-        const canvasContainer = document.getElementById('canvasContainer');
         if (!canvasContainer) return;
         
         // Remove existing event listeners
@@ -446,19 +439,20 @@ document.addEventListener('DOMContentLoaded', function() {
         document.removeEventListener('touchend', handleTwoFingerTouchEnd);
         document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
         
-        // Add new event listener on container
+        // Add new event listener
         canvasContainer.addEventListener('touchstart', handleTwoFingerTouchStart, { passive: false });
     }
 
+    // ✅ UPDATED: Allow 2-finger pan for ALL tools (brush, eraser, auto-select, lasso)
     function handleTwoFingerTouchStart(e) {
         const touches = e.touches;
         
-        // ✅ Two-finger pan ALWAYS works (even when brush/eraser is selected)
+        // Two-finger pan anywhere on canvas container
         if (touches.length === 2) {
             const touch1 = touches[0];
             const touch2 = touches[1];
             
-            // Calculate average position of two fingers
+            // Average position
             const avgX = (touch1.clientX + touch2.clientX) / 2;
             const avgY = (touch1.clientY + touch2.clientY) / 2;
             
@@ -473,13 +467,10 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             e.stopPropagation();
             
-            console.log('Two-finger scroll started');
-            
-            // Add global event listeners
+            // Global listeners
             document.addEventListener('touchmove', handleTwoFingerTouchMove, { passive: false });
             document.addEventListener('touchend', handleTwoFingerTouchEnd);
             document.addEventListener('touchcancel', handleTwoFingerTouchEnd);
-            return;
         }
     }
 
@@ -495,15 +486,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const touch1 = touches[0];
             const touch2 = touches[1];
             
-            // Calculate average position of two fingers
             const avgX = (touch1.clientX + touch2.clientX) / 2;
             const avgY = (touch1.clientY + touch2.clientY) / 2;
             
-            // Calculate deltas (inverted for natural scrolling)
             const deltaX = twoFingerStartX - avgX;
             const deltaY = twoFingerStartY - avgY;
             
-            // Calculate scroll parameters
             const rect = canvasContainer.getBoundingClientRect();
             const contentWidth = houseCanvas.width * scale;
             const contentHeight = houseCanvas.height * scale;
@@ -513,41 +501,32 @@ document.addEventListener('DOMContentLoaded', function() {
             const maxScrollLeft = Math.max(0, contentWidth - containerWidth);
             const maxScrollTop = Math.max(0, contentHeight - containerHeight);
             
-            // Calculate scroll ratios based on movement speed
             const currentTime = Date.now();
             const timeDiff = currentTime - lastTwoFingerMoveTime;
-            const speedMultiplier = Math.min(2, Math.max(0.5, 100 / Math.max(timeDiff, 16))); // 60fps base
+            const speedMultiplier = Math.min(2, Math.max(0.5, 100 / Math.max(timeDiff, 16)));
             
-            // Apply scroll with momentum
             const scrollDeltaX = deltaX * speedMultiplier;
             const scrollDeltaY = deltaY * speedMultiplier;
             
             const newScrollLeft = Math.max(0, Math.min(maxScrollLeft, twoFingerScrollStartX + scrollDeltaX));
             const newScrollTop = Math.max(0, Math.min(maxScrollTop, twoFingerScrollStartY + scrollDeltaY));
             
-            // Apply both scroll positions
             canvasContainer.scrollLeft = newScrollLeft;
             canvasContainer.scrollTop = newScrollTop;
             
-            // Update for next movement
             twoFingerStartX = avgX;
             twoFingerStartY = avgY;
             twoFingerScrollStartX = newScrollLeft;
             twoFingerScrollStartY = newScrollTop;
             lastTwoFingerMoveTime = currentTime;
-            
-            console.log('Two-finger scroll:', newScrollLeft, newScrollTop);
         }
     }
 
-    function handleTwoFingerTouchEnd(e) {
+    function handleTwoFingerTouchEnd() {
         if (!isTwoFingerScrolling) return;
         
         isTwoFingerScrolling = false;
         
-        console.log('Two-finger scroll ended');
-        
-        // Remove global event listeners
         document.removeEventListener('touchmove', handleTwoFingerTouchMove);
         document.removeEventListener('touchend', handleTwoFingerTouchEnd);
         document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
@@ -560,7 +539,7 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.removeEventListener('touchmove', handleMobileScrollMove);
         canvasContainer.removeEventListener('touchend', handleMobileScrollEnd);
         
-        // Add mobile scroll handlers (single finger scroll when not painting tools)
+        // Add mobile scroll handlers
         canvasContainer.addEventListener('touchstart', handleMobileScrollStart, { passive: false });
         canvasContainer.addEventListener('touchmove', handleMobileScrollMove, { passive: false });
         canvasContainer.addEventListener('touchend', handleMobileScrollEnd);
@@ -689,14 +668,13 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.addEventListener('touchstart', removeIndicators);
     }
     
-    // NEW: Handle mobile scroll start (single finger in container when not painting)
+    // NEW: Handle mobile scroll start (single finger) for container dragging
     function handleMobileScrollStart(e) {
-        // Don't start regular scrolling if we're in two-finger mode
+        // If 2 fingers → handled by two-finger scroll
+        if (e.touches.length > 1) return;
         if (isTwoFingerScrolling) return;
         
-        // single finger only & only when NOT brush/eraser (so one finger always paints on canvas for those tools)
-        if (e.touches.length !== 1 || currentTool === 'brush' || currentTool === 'eraser') return;
-        
+        // Don't hijack when painting on canvas – this is on container anyway
         e.preventDefault();
         isMobileScrolling = true;
         
@@ -706,13 +684,10 @@ document.addEventListener('DOMContentLoaded', function() {
         scrollOffsetX = canvasContainer.scrollLeft;
         scrollOffsetY = canvasContainer.scrollTop;
         
-        // Show scroll handle
         showScrollHandle(touch.clientX, touch.clientY);
-        
         canvasContainer.style.cursor = 'grabbing';
     }
     
-    // NEW: Handle mobile scroll move (single finger)
     function handleMobileScrollMove(e) {
         if (!isMobileScrolling || e.touches.length !== 1 || isTwoFingerScrolling) return;
         
@@ -722,24 +697,19 @@ document.addEventListener('DOMContentLoaded', function() {
         const deltaX = scrollStartX - touch.clientX;
         const deltaY = scrollStartY - touch.clientY;
         
-        // Update scroll position
         canvasContainer.scrollLeft = scrollOffsetX + deltaX;
         canvasContainer.scrollTop = scrollOffsetY + deltaY;
         
-        // Update scroll handle position
         updateScrollHandle(touch.clientX, touch.clientY);
     }
     
-    // NEW: Handle mobile scroll end (single finger)
     function handleMobileScrollEnd() {
         isMobileScrolling = false;
         canvasContainer.style.cursor = 'grab';
-        
-        // Hide scroll handle
         hideScrollHandle();
     }
     
-    // NEW: Show big scroll handle for mobile
+    // Scroll handle helpers
     function showScrollHandle(x, y) {
         hideScrollHandle();
         
@@ -762,14 +732,12 @@ document.addEventListener('DOMContentLoaded', function() {
         
         document.body.appendChild(handle);
         
-        // Add active state after a delay
         setTimeout(() => {
             handle.style.background = 'rgba(52, 152, 219, 0.6)';
             handle.style.transform = 'scale(1.1)';
         }, 50);
     }
     
-    // NEW: Update scroll handle position
     function updateScrollHandle(x, y) {
         const handle = document.querySelector('.mobile-scroll-handle');
         if (handle) {
@@ -778,7 +746,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // NEW: Hide scroll handle
     function hideScrollHandle() {
         const handle = document.querySelector('.mobile-scroll-handle');
         if (handle) {
@@ -786,21 +753,19 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // UPDATED: Touch event handlers for mobile - single finger painting
+    // ✅ UPDATED: Touch event handlers – single finger = paint, two fingers = pan
     function handleTouchStart(e) {
-        // Only for brush/eraser and single finger
+        // Only handle painting for brush/eraser with ONE finger
         if (currentTool !== 'brush' && currentTool !== 'eraser') return;
-        if (!e.touches || e.touches.length !== 1) return;
+        if (!e.touches || e.touches.length !== 1) return; // 2-finger → pan only
         
         e.preventDefault();
         isTouchPainting = true;
         
-        // Use the corrected getMousePos function for accurate coordinates
         const pos = getMousePos(e);
         touchStartX = pos.x;
         touchStartY = pos.y;
         
-        // Convert touch to mouse event for painting with corrected coordinates
         const mouseEvent = new MouseEvent('mousedown', {
             clientX: e.touches[0].clientX,
             clientY: e.touches[0].clientY
@@ -809,15 +774,12 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function handleTouchMove(e) {
-        // Handle single touch for painting only
         if (!isTouchPainting) return;
-        if (!e.touches || e.touches.length !== 1) return;
+        if (!e.touches || e.touches.length !== 1) return; // ignore multi-touch
         
         e.preventDefault();
         
         const touch = e.touches[0];
-        
-        // Convert touch to mouse event for painting with corrected coordinates
         const mouseEvent = new MouseEvent('mousemove', {
             clientX: touch.clientX,
             clientY: touch.clientY
@@ -826,18 +788,16 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function handleTouchEnd(e) {
-        // Handle single touch end
         if (!isTouchPainting) return;
         
         e.preventDefault();
         isTouchPainting = false;
         
-        // Convert touch to mouse event for painting
         const mouseEvent = new MouseEvent('mouseup');
         houseCanvas.dispatchEvent(mouseEvent);
     }
     
-    // Zoom functions - ONLY WORK WITH TOOLBAR BUTTONS NOW
+    // Zoom functions
     function zoomIn() {
         scale = Math.min(scale * 1.2, 5);
         updateCanvasTransform();
@@ -851,7 +811,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function resetZoom() {
         scale = 1;
         updateCanvasTransform();
-        // Reset scroll position when zoom is reset
         if (canvasContainer) {
             canvasContainer.scrollLeft = 0;
             canvasContainer.scrollTop = 0;
@@ -863,11 +822,9 @@ document.addEventListener('DOMContentLoaded', function() {
         tempCanvas.style.transform = `scale(${scale})`;
         updateZoomDisplay();
         
-        // Force reflow
         houseCanvas.offsetHeight;
         tempCanvas.offsetHeight;
         
-        // Update mobile scroll setup when zoom changes
         if (isMobileDevice()) {
             setupMobileScroll();
         }
@@ -886,7 +843,6 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         
-        // Filter colors based on query
         const results = [];
         
         for (const [hex, name] of Object.entries(allColors)) {
@@ -895,18 +851,15 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
-        // Also search in predefined colors
         colors.forEach(color => {
             if (color.toLowerCase().includes(query)) {
                 results.push({ hex: color, name: 'Custom Color' });
             }
         });
         
-        // Display results
         displaySearchResults(results);
     }
     
-    // Display search results
     function displaySearchResults(results) {
         colorSearchResults.innerHTML = '';
         
@@ -938,7 +891,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 colorDetails.appendChild(colorCode);
                 colorDetails.appendChild(colorName);
                 
-                // Determine brand for tag
                 let brand = 'Custom';
                 if (asianPaintsColors[result.hex]) brand = 'Asian Paints';
                 else if (bergerPaintsColors[result.hex]) brand = 'Berger';
@@ -1063,10 +1015,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             };
             
-            // Reset canvas
             resetCanvas();
             
-            // Reset settings
             setCurrentColor('#3498db');
             currentOpacity = 0.8;
             opacitySlider.value = 80;
@@ -1084,17 +1034,13 @@ document.addEventListener('DOMContentLoaded', function() {
             tolerance.value = 30;
             toleranceValue.textContent = '30';
             
-            // Reset applied colors
             appliedColors.clear();
-            
-            // Reset zoom
             resetZoom();
         }
     }
     
     // Save project to .apz file
     function saveProject() {
-        // Update project state
         currentProject.lastSaved = new Date();
         currentProject.history = [...history];
         currentProject.settings = {
@@ -1105,16 +1051,13 @@ document.addEventListener('DOMContentLoaded', function() {
             tolerance: parseInt(tolerance.value)
         };
         
-        // Get current canvas state
         const currentState = houseCanvas.toDataURL();
         currentProject.currentState = currentState;
         
-        // If there's an original image, include it
         if (originalImage) {
             currentProject.originalImage = originalImage.src;
         }
         
-        // Create blob and download
         const projectData = JSON.stringify(currentProject, null, 2);
         const blob = new Blob([projectData], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
@@ -1143,15 +1086,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 try {
                     const projectData = JSON.parse(event.target.result);
                     
-                    // Validate project file
                     if (!projectData.history || !projectData.settings) {
                         throw new Error('Invalid project file');
                     }
                     
-                    // Load project data
                     currentProject = projectData;
                     
-                    // Restore settings
                     setCurrentColor(projectData.settings.currentColor || '#3498db');
                     currentOpacity = projectData.settings.currentOpacity || 0.8;
                     opacitySlider.value = (currentOpacity * 100);
@@ -1169,11 +1109,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     tolerance.value = projectData.settings.tolerance || 30;
                     toleranceValue.textContent = (projectData.settings.tolerance || 30).toString();
                     
-                    // Restore history
                     history = [...projectData.history];
                     historyIndex = history.length - 1;
                     
-                    // Load the last state from history
                     if (history.length > 0) {
                         const lastState = history[historyIndex];
                         const img = new Image();
@@ -1184,13 +1122,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         img.src = lastState;
                     }
                     
-                    // Reset applied colors
                     appliedColors.clear();
-                    
-                    // Reset zoom
                     resetZoom();
-                    
-                    // Update undo/redo buttons
                     updateUndoRedoButtons();
                 } catch (error) {
                     console.error('Error loading project:', error);
@@ -1207,7 +1140,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function setCurrentTool(tool) {
         currentTool = tool;
         
-        // Update UI
         brushTool.classList.remove('active');
         eraserTool.classList.remove('active');
         autoSelectTool.classList.remove('active');
@@ -1242,18 +1174,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Clear selection
     function clearSelection() {
         selectedPixels.clear();
         tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
     }
     
-    // Set the current color
     function setCurrentColor(color) {
         currentColor = color;
         customColorPicker.value = color;
         
-        // Update active state in palette
         document.querySelectorAll('.color-option').forEach(option => {
             option.classList.remove('active');
             if (option.dataset.color === color) {
@@ -1262,7 +1191,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Handle file selection
     function handleFileSelect(e) {
         const file = e.target.files[0];
         if (file) {
@@ -1271,7 +1199,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Load image from file
     function loadImageFromFile(file) {
         const reader = new FileReader();
         reader.onload = function(event) {
@@ -1279,9 +1206,7 @@ document.addEventListener('DOMContentLoaded', function() {
             img.onload = function() {
                 originalImage = img;
                 
-                // Set canvas size to match image dimensions for maximum quality
-                // But limit to container width with padding
-                const containerWidth = canvasContainer.clientWidth - 40; // 20px padding on each side
+                const containerWidth = canvasContainer.clientWidth - 40;
                 const aspectRatio = img.height / img.width;
                 
                 houseCanvas.width = containerWidth;
@@ -1290,18 +1215,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 tempCanvas.height = containerWidth * aspectRatio;
                 
                 drawImageToCanvas();
-                alignTempCanvas(); // ensure overlay canvas aligns exactly
-                // Store the original image data for eraser functionality
+                alignTempCanvas();
                 originalImageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
                 saveToHistory();
                 
-                // Reset applied colors
                 appliedColors.clear();
-                
-                // Reset zoom
                 resetZoom();
-                
-                // Setup mobile scroll for new image
                 setupMobileScroll();
             };
             img.src = event.target.result;
@@ -1309,7 +1228,6 @@ document.addEventListener('DOMContentLoaded', function() {
         reader.readAsDataURL(file);
     }
     
-    // Load sample image
     function loadSampleImage(type) {
         originalImage = null;
         if (type === 'sample1') {
@@ -1317,45 +1235,33 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             drawSampleHouse2();
         }
-        // Store the original image data for eraser functionality
         originalImageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
         uploadModal.style.display = 'none';
         alignTempCanvas();
         saveToHistory();
         
-        // Reset applied colors
         appliedColors.clear();
-        
-        // Reset zoom
         resetZoom();
-        
-        // Setup mobile scroll
         setupMobileScroll();
     }
     
-    // Draw sample house 1 (for demo purposes) - FIXED: Use clean settings
     function drawSampleHouse1() {
         const containerWidth = canvasContainer.clientWidth - 40;
         const height = containerWidth * 0.75;
         
-        // Set canvas size
         houseCanvas.width = containerWidth;
         houseCanvas.height = height;
         tempCanvas.width = containerWidth;
         tempCanvas.height = height;
         
-        // Save current settings
         const currentAlpha = ctx.globalAlpha;
         const currentComposite = ctx.globalCompositeOperation;
         
-        // Use clean settings for drawing
         ctx.globalAlpha = 1.0;
         ctx.globalCompositeOperation = 'source-over';
         
-        // Clear canvas
         ctx.clearRect(0, 0, containerWidth, height);
         
-        // Draw with full opacity
         ctx.fillStyle = '#87CEEB';
         ctx.fillRect(0, 0, containerWidth, height * 0.6);
         
@@ -1365,7 +1271,6 @@ document.addEventListener('DOMContentLoaded', function() {
         ctx.fillStyle = '#F5F5DC';
         ctx.fillRect(containerWidth * 0.3, height * 0.3, containerWidth * 0.4, height * 0.3);
         
-        // Draw roof
         ctx.fillStyle = '#8B4513';
         ctx.beginPath();
         ctx.moveTo(containerWidth * 0.25, height * 0.3);
@@ -1374,22 +1279,18 @@ document.addEventListener('DOMContentLoaded', function() {
         ctx.closePath();
         ctx.fill();
         
-        // Draw door
         ctx.fillStyle = '#8B4513';
         ctx.fillRect(containerWidth * 0.45, height * 0.45, containerWidth * 0.1, height * 0.15);
         
-        // Draw windows
         ctx.fillStyle = '#ADD8E6';
         ctx.fillRect(containerWidth * 0.35, height * 0.35, containerWidth * 0.08, height * 0.08);
         ctx.fillRect(containerWidth * 0.57, height * 0.35, containerWidth * 0.08, height * 0.08);
         
-        // Draw window frames
         ctx.strokeStyle = '#8B4513';
         ctx.lineWidth = 2;
         ctx.strokeRect(containerWidth * 0.35, height * 0.35, containerWidth * 0.08, height * 0.08);
         ctx.strokeRect(containerWidth * 0.57, height * 0.35, containerWidth * 0.08, height * 0.08);
         
-        // Draw window cross
         ctx.beginPath();
         ctx.moveTo(containerWidth * 0.39, height * 0.35);
         ctx.lineTo(containerWidth * 0.39, height * 0.43);
@@ -1404,118 +1305,92 @@ document.addEventListener('DOMContentLoaded', function() {
         ctx.lineTo(containerWidth * 0.65, height * 0.39);
         ctx.stroke();
         
-        // Restore settings
         ctx.globalAlpha = currentAlpha;
         ctx.globalCompositeOperation = currentComposite;
     }
     
-    // Draw sample house 2 (for demo purposes) - FIXED: Use clean settings
     function drawSampleHouse2() {
         const containerWidth = canvasContainer.clientWidth - 40;
         const height = containerWidth * 0.75;
         
-        // Set canvas size
         houseCanvas.width = containerWidth;
         houseCanvas.height = height;
         tempCanvas.width = containerWidth;
         tempCanvas.height = height;
         
-        // Save current settings
         const currentAlpha = ctx.globalAlpha;
         const currentComposite = ctx.globalCompositeOperation;
         
-        // Use clean settings for drawing
         ctx.globalAlpha = 1.0;
         ctx.globalCompositeOperation = 'source-over';
         
-        // Clear canvas
         ctx.clearRect(0, 0, containerWidth, height);
         
-        // Draw with full opacity
         ctx.fillStyle = '#87CEEB';
         ctx.fillRect(0, 0, containerWidth, height * 0.6);
         
         ctx.fillStyle = '#32CD32';
         ctx.fillRect(0, height * 0.6, containerWidth, height * 0.4);
         
-        // Draw modern house body
         ctx.fillStyle = '#E0E0E0';
         ctx.fillRect(containerWidth * 0.2, height * 0.25, containerWidth * 0.6, height * 0.35);
         
-        // Draw flat roof
         ctx.fillStyle = '#2C3E50';
         ctx.fillRect(containerWidth * 0.18, height * 0.25, containerWidth * 0.64, height * 0.05);
         
-        // Draw large window
         ctx.fillStyle = '#34495E';
         ctx.fillRect(containerWidth * 0.3, height * 0.3, containerWidth * 0.4, height * 0.15);
         
-        // Draw door
         ctx.fillStyle = '#16A085';
         ctx.fillRect(containerWidth * 0.45, height * 0.45, containerWidth * 0.1, height * 0.15);
         
-        // Draw side panel
         ctx.fillStyle = '#BDC3C7';
         ctx.fillRect(containerWidth * 0.2, height * 0.4, containerWidth * 0.1, height * 0.2);
         
-        // Restore settings
         ctx.globalAlpha = currentAlpha;
         ctx.globalCompositeOperation = currentComposite;
     }
     
-    // Draw the original image to canvas - FIXED: Use clean settings
     function drawImageToCanvas() {
         if (!originalImage) return;
         
-        // Save current settings
         const currentAlpha = ctx.globalAlpha;
         const currentComposite = ctx.globalCompositeOperation;
         
-        // Use clean settings for drawing
         ctx.globalAlpha = 1.0;
         ctx.globalCompositeOperation = 'source-over';
         
-        // Clear and draw
         ctx.clearRect(0, 0, houseCanvas.width, houseCanvas.height);
         ctx.drawImage(originalImage, 0, 0, houseCanvas.width, houseCanvas.height);
         
-        // Restore settings
         ctx.globalAlpha = currentAlpha;
         ctx.globalCompositeOperation = currentComposite;
         
-        // Update original image data
         originalImageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
     }
     
-    // Resize canvas container to fit available space
     function resizeCanvas() {
         const container = canvasContainer;
-        const maxWidth = container.parentElement.clientWidth - 50; // Account for padding
+        const maxWidth = container.parentElement.clientWidth - 50;
         const maxHeight = window.innerHeight * 0.6;
         
-        // Set container dimensions
         container.style.width = `${maxWidth}px`;
         container.style.height = `${maxHeight}px`;
         
-        // If we have an image, redraw it to fit the new container size
         if (originalImage) {
             const aspectRatio = originalImage.height / originalImage.width;
-            houseCanvas.width = maxWidth - 40; // Account for padding
+            houseCanvas.width = maxWidth - 40;
             houseCanvas.height = (maxWidth - 40) * aspectRatio;
             tempCanvas.width = maxWidth - 40;
             tempCanvas.height = (maxWidth - 40) * aspectRatio;
             drawImageToCanvas();
             originalImageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
         }
-        alignTempCanvas(); // ensure overlay alignment after resize
-        
-        // Update mobile scroll
+        alignTempCanvas();
         setupMobileScroll();
     }
     
-    // Align tempCanvas position/size so overlay drawing matches houseCanvas exactly
     function alignTempCanvas() {
-        // Make tempCanvas the same displayed position as houseCanvas inside the container
         const containerRect = canvasContainer.getBoundingClientRect();
         const canvasRect = houseCanvas.getBoundingClientRect();
         const left = canvasRect.left - containerRect.left;
@@ -1524,23 +1399,19 @@ document.addEventListener('DOMContentLoaded', function() {
         tempCanvas.style.left = `${left}px`;
         tempCanvas.style.top = `${top}px`;
         
-        // Ensure the temp canvas internal size matches the main canvas (already set where needed)
-        // If not set, set to match
         if (tempCanvas.width !== houseCanvas.width || tempCanvas.height !== houseCanvas.height) {
             tempCanvas.width = houseCanvas.width;
             tempCanvas.height = houseCanvas.height;
         }
     }
     
-    // Handle canvas click for tools - FIXED: Use corrected coordinates
     function handleCanvasClick(e) {
         const pos = getMousePos(e);
         const x = pos.x;
         const y = pos.y;
         
         if (currentTool === 'autoSelect') {
-            // Enhanced auto-select with Shift and Alt functionality
-            if (isDragging) return; // Skip if we're in the middle of a drag operation
+            if (isDragging) return;
            
             const imageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
             const data = imageData.data;
@@ -1558,71 +1429,61 @@ document.addEventListener('DOMContentLoaded', function() {
             
             drawZigZagOutline(selectedPixels);
             
-            // Apply color immediately if not using modifier keys
             if (!e.shiftKey && !e.altKey) {
                 applyColorToSelection();
             }
         } else if (currentTool === 'lasso') {
             if (!isDrawingLasso) {
-                // Start new lasso selection
                 lassoPoints = [{x, y}];
                 isDrawingLasso = true;
                 drawLassoPreview();
             } else {
-                // Add point to existing lasso
                 lassoPoints.push({x, y});
                 drawLassoPreview();
             }
         }
     }
     
-    // Apply current color to selection
     function applyColorToSelection() {
         if (selectedPixels.size === 0) return;
         
         const imageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
         const data = imageData.data;
-        const rgb = hexToRgb(currentColor);
+        const rgb = hexToRgbToArr(currentColor);
         
         for (const key of selectedPixels) {
             const [x, y] = key.split(',').map(Number);
             const i = (y * houseCanvas.width + x) * 4;
             
-            // Blend the new color with the existing pixel using opacity
             const r = data[i];
             const g = data[i + 1];
             const b = data[i + 2];
             
-            data[i] = r * (1 - currentOpacity) + rgb[0] * currentOpacity;
-            data[i + 1] = g * (1 - currentOpacity) + rgb[1] * currentOpacity;
-            data[i + 2] = b * (1 - currentOpacity) + rgb[2] * currentOpacity;
+            data[i]   = r * (1 - currentOpacity) + rgb[0] * currentOpacity;
+            data[i+1] = g * (1 - currentOpacity) + rgb[1] * currentOpacity;
+            data[i+2] = b * (1 - currentOpacity) + rgb[2] * currentOpacity;
         }
         
         ctx.putImageData(imageData, 0, 0);
         selectedPixels.clear();
         tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
         
-        // Track applied color
         appliedColors.add(currentColor);
         
         saveToHistory();
     }
     
-    // Handle canvas double click for lasso tool
     function handleCanvasDoubleClick(e) {
         if (currentTool === 'lasso' && isDrawingLasso && lassoPoints.length > 2) {
-            // Complete the lasso selection and fill it
             fillLassoSelection();
             resetLasso();
             
-            // Track applied color
             appliedColors.add(currentColor);
             
             saveToHistory();
         }
     }
     
-    // Draw lasso preview
     function drawLassoPreview() {
         tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
         
@@ -1637,7 +1498,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 tempCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
             }
             
-            // Draw back to the first point if we have at least 2 points
             if (lassoPoints.length > 1) {
                 tempCtx.lineTo(lassoPoints[0].x, lassoPoints[0].y);
             }
@@ -1645,7 +1505,6 @@ document.addEventListener('DOMContentLoaded', function() {
             tempCtx.stroke();
             tempCtx.setLineDash([]);
             
-            // Draw points
             lassoPoints.forEach(point => {
                 tempCtx.fillStyle = '#FF0000';
                 tempCtx.beginPath();
@@ -1655,17 +1514,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Fill the lasso selection
     function fillLassoSelection() {
         if (lassoPoints.length < 3) return;
         
-        // Create a temporary canvas for the selection
         const selectionCanvas = document.createElement('canvas');
         selectionCanvas.width = houseCanvas.width;
         selectionCanvas.height = houseCanvas.height;
         const selectionCtx = selectionCanvas.getContext('2d');
         
-        // Draw the polygon on the temporary canvas
         selectionCtx.fillStyle = '#000';
         selectionCtx.beginPath();
         selectionCtx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
@@ -1675,52 +1531,44 @@ document.addEventListener('DOMContentLoaded', function() {
         selectionCtx.closePath();
         selectionCtx.fill();
         
-        // Get the image data from the main canvas
         const imageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
         const selectionData = selectionCtx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
         
-        // Apply the color only to the selected area with opacity
-        const rgb = hexToRgb(currentColor);
+        const rgb = hexToRgbToArr(currentColor);
         for (let i = 0; i < imageData.data.length; i += 4) {
-            if (selectionData.data[i + 3] > 0) { // If pixel is in the selection
-                // Blend the new color with the existing pixel using opacity
+            if (selectionData.data[i + 3] > 0) {
                 const r = imageData.data[i];
                 const g = imageData.data[i + 1];
                 const b = imageData.data[i + 2];
                 
-                imageData.data[i] = r * (1 - currentOpacity) + rgb[0] * currentOpacity;
-                imageData.data[i + 1] = g * (1 - currentOpacity) + rgb[1] * currentOpacity;
-                imageData.data[i + 2] = b * (1 - currentOpacity) + rgb[2] * currentOpacity;
+                imageData.data[i]   = r * (1 - currentOpacity) + rgb[0] * currentOpacity;
+                imageData.data[i+1] = g * (1 - currentOpacity) + rgb[1] * currentOpacity;
+                imageData.data[i+2] = b * (1 - currentOpacity) + rgb[2] * currentOpacity;
             }
         }
         
-        // Put the modified image data back to canvas
         ctx.putImageData(imageData, 0, 0);
         
-        // Clear the temporary canvas
         tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
     }
     
-    // Reset lasso tool
     function resetLasso() {
         isDrawingLasso = false;
         lassoPoints = [];
         tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
     }
     
-    // Get color at a specific pixel
     function getColorAtPixel(imageData, x, y) {
         const { width, height, data } = imageData;
         if (x < 0 || y < 0 || x >= width || y >= height) {
-            return [-1, -1, -1, -1]; // Impossible color
+            return [-1, -1, -1, -1];
         }
         
         const offset = (y * width + x) * 4;
         return [data[offset], data[offset + 1], data[offset + 2], data[offset + 3]];
     }
     
-    // Convert hex color to RGB
-    function hexToRgb(hex) {
+    function hexToRgbToArr(hex) {
         const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
         return result ? [
             parseInt(result[1], 16),
@@ -1729,7 +1577,6 @@ document.addEventListener('DOMContentLoaded', function() {
         ] : [0, 0, 0];
     }
     
-    // Check if two colors are similar within tolerance
     function colorsMatch(color1, color2, tolerance) {
         return (
             Math.abs(color1[0] - color2[0]) <= tolerance &&
@@ -1738,7 +1585,7 @@ document.addEventListener('DOMContentLoaded', function() {
         );
     }
     
-    // Flood fill algorithm for auto-select
+    // Flood fill algorithm
     function floodFill(startX, startY, targetColor, tolerance, data, width, height, maxDistance = Infinity) {
         const visited = new Set();
         const stack = [[startX, startY]];
@@ -1780,39 +1627,33 @@ document.addEventListener('DOMContentLoaded', function() {
         return result;
     }
     
-    // Start painting
     function startPainting(e) {
         if (currentTool !== 'brush' && currentTool !== 'eraser') return;
         isPainting = true;
         paint(e);
     }
     
-    // Paint on canvas - UPDATED with corrected coordinates
     function paint(e) {
         if (!isPainting || (currentTool !== 'brush' && currentTool !== 'eraser')) return;
         
-        const pos = getMousePos(e); // This now returns corrected coordinates
+        const pos = getMousePos(e);
         const x = pos.x;
         const y = pos.y;
         
         if (currentTool === 'eraser') {
-            // Erase by restoring original image data
             const size = parseInt(brushSize.value);
             const imageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
             
             if (currentEraser === 'circle') {
-                // Circle eraser
                 for (let i = -size/2; i < size/2; i++) {
                     for (let j = -size/2; j < size/2; j++) {
                         const px = Math.floor(x + i);
                         const py = Math.floor(y + j);
                         
-                        // Check if point is within circle
                         if (Math.sqrt(i*i + j*j) <= size/2) {
                             if (px >= 0 && px < houseCanvas.width && py >= 0 && py < houseCanvas.height) {
                                 const offset = (py * houseCanvas.width + px) * 4;
                                 
-                                // Restore original pixel data
                                 if (originalImageData) {
                                     imageData.data[offset] = originalImageData.data[offset];
                                     imageData.data[offset + 1] = originalImageData.data[offset + 1];
@@ -1824,7 +1665,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 }
             } else {
-                // Square eraser
                 for (let i = -size/2; i < size/2; i++) {
                     for (let j = -size/2; j < size/2; j++) {
                         const px = Math.floor(x + i);
@@ -1833,7 +1673,6 @@ document.addEventListener('DOMContentLoaded', function() {
                         if (px >= 0 && px < houseCanvas.width && py >= 0 && py < houseCanvas.height) {
                             const offset = (py * houseCanvas.width + px) * 4;
                             
-                            // Restore original pixel data
                             if (originalImageData) {
                                 imageData.data[offset] = originalImageData.data[offset];
                                 imageData.data[offset + 1] = originalImageData.data[offset + 1];
@@ -1847,12 +1686,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             ctx.putImageData(imageData, 0, 0);
         } else {
-            // Regular painting with corrected coordinates
             ctx.globalCompositeOperation = 'source-over';
             ctx.fillStyle = currentColor;
             ctx.globalAlpha = currentOpacity;
             
-            // Different brush shapes
             const size = parseInt(brushSize.value);
             
             switch(currentShape) {
@@ -1871,8 +1708,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (e.type === 'mousedown' || e.type === 'touchstart') {
                         ctx.moveTo(x, y);
                     } else {
-                        // For mousemove, we need to draw a line from the previous position
-                        // This is a simplified version - a full implementation would track the previous position
                         ctx.moveTo(x - 1, y - 1);
                         ctx.lineTo(x, y);
                     }
@@ -1887,7 +1722,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     ctx.closePath();
                     ctx.fill();
                     break;
-                case 'line45': // 45-degree line brush
+                case 'line45':
                     ctx.lineWidth = size;
                     ctx.lineCap = 'round';
                     ctx.beginPath();
@@ -1897,7 +1732,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     ctx.strokeStyle = currentColor;
                     ctx.stroke();
                     break;
-                case 'line135': // 135-degree line brush
+                case 'line135':
                     ctx.lineWidth = size;
                     ctx.lineCap = 'round';
                     ctx.beginPath();
@@ -1909,12 +1744,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     break;
             }
             
-            // Track applied color
             appliedColors.add(currentColor);
         }
     }
     
-    // Stop painting
     function stopPainting() {
         if (isPainting && (currentTool === 'brush' || currentTool === 'eraser')) {
             isPainting = false;
@@ -1922,32 +1755,25 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Save current canvas state to history - FIXED: Save clean state without active context settings
     function saveToHistory() {
-        // If we're not at the end of history, remove future states
         if (historyIndex < history.length - 1) {
             history = history.slice(0, historyIndex + 1);
         }
         
-        // Save current context settings
         const currentAlpha = ctx.globalAlpha;
         const currentComposite = ctx.globalCompositeOperation;
         
-        // Temporarily reset to default settings for saving
         ctx.globalAlpha = 1.0;
         ctx.globalCompositeOperation = 'source-over';
         
-        // Get image data with default settings
         const imageData = houseCanvas.toDataURL();
         
-        // Restore context settings
         ctx.globalAlpha = currentAlpha;
         ctx.globalCompositeOperation = currentComposite;
         
         history.push(imageData);
         historyIndex = history.length - 1;
         
-        // Limit history size
         if (history.length > maxHistorySize) {
             history.shift();
             historyIndex--;
@@ -1956,28 +1782,23 @@ document.addEventListener('DOMContentLoaded', function() {
         updateUndoRedoButtons();
     }
     
-    // Update undo/redo buttons state
     function updateUndoRedoButtons() {
         undoBtn.disabled = historyIndex <= 0;
         redoBtn.disabled = historyIndex >= history.length - 1;
     }
     
-    // Undo action - FIXED: Don't apply transparency effects multiple times
     function undoAction() {
         if (historyIndex > 0) {
             historyIndex--;
             const state = history[historyIndex];
             const img = new Image();
             img.onload = function() {
-                // Clear canvas completely before redrawing
                 ctx.clearRect(0, 0, houseCanvas.width, houseCanvas.height);
                 
-                // Draw the saved state without any additional effects
-                ctx.globalAlpha = 1.0; // Reset to full opacity
-                ctx.globalCompositeOperation = 'source-over'; // Reset composite operation
+                ctx.globalAlpha = 1.0;
+                ctx.globalCompositeOperation = 'source-over';
                 ctx.drawImage(img, 0, 0, houseCanvas.width, houseCanvas.height);
                 
-                // Reset context settings to current painting settings
                 ctx.globalAlpha = currentOpacity;
                 ctx.globalCompositeOperation = 'source-over';
             };
@@ -1986,22 +1807,18 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Redo action - FIXED: Don't apply transparency effects multiple times
     function redoAction() {
         if (historyIndex < history.length - 1) {
             historyIndex++;
             const state = history[historyIndex];
             const img = new Image();
             img.onload = function() {
-                // Clear canvas completely before redrawing
                 ctx.clearRect(0, 0, houseCanvas.width, houseCanvas.height);
                 
-                // Draw the saved state without any additional effects
-                ctx.globalAlpha = 1.0; // Reset to full opacity
-                ctx.globalCompositeOperation = 'source-over'; // Reset composite operation
+                ctx.globalAlpha = 1.0;
+                ctx.globalCompositeOperation = 'source-over';
                 ctx.drawImage(img, 0, 0, houseCanvas.width, houseCanvas.height);
                 
-                // Reset context settings to current painting settings
                 ctx.globalAlpha = currentOpacity;
                 ctx.globalCompositeOperation = 'source-over';
             };
@@ -2010,50 +1827,38 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Reset canvas to original image - FIXED: Completely clean reset without confirmation
     function resetCanvas() {
-        // Completely clear the canvas
         ctx.clearRect(0, 0, houseCanvas.width, houseCanvas.height);
         
         if (originalImage) {
-            // Save current context settings
             const currentAlpha = ctx.globalAlpha;
             const currentComposite = ctx.globalCompositeOperation;
             
-            // Reset to full opacity for clean drawing
             ctx.globalAlpha = 1.0;
             ctx.globalCompositeOperation = 'source-over';
             
-            // Draw original image with full opacity
             ctx.drawImage(originalImage, 0, 0, houseCanvas.width, houseCanvas.height);
             
-            // Restore current settings for future painting
             ctx.globalAlpha = currentAlpha;
             ctx.globalCompositeOperation = currentComposite;
         } else if (history.length > 0) {
-            // Load the very first state from history (clean state)
             const firstState = history[0];
             const img = new Image();
             img.onload = function() {
-                // Save current context settings
                 const currentAlpha = ctx.globalAlpha;
                 const currentComposite = ctx.globalCompositeOperation;
                 
-                // Reset to full opacity for clean drawing
                 ctx.globalAlpha = 1.0;
                 ctx.globalCompositeOperation = 'source-over';
                 
-                // Clear and draw with full opacity
                 ctx.clearRect(0, 0, houseCanvas.width, houseCanvas.height);
                 ctx.drawImage(img, 0, 0, houseCanvas.width, houseCanvas.height);
                 
-                // Restore current settings for future painting
                 ctx.globalAlpha = currentAlpha;
                 ctx.globalCompositeOperation = currentComposite;
             };
             img.src = firstState;
         } else {
-            // If no original image or history, draw sample with clean settings
             const currentAlpha = ctx.globalAlpha;
             const currentComposite = ctx.globalCompositeOperation;
             
@@ -2066,31 +1871,25 @@ document.addEventListener('DOMContentLoaded', function() {
             ctx.globalCompositeOperation = currentComposite;
         }
         
-        // Store the clean image data for eraser functionality
         originalImageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
         
         resetLasso();
         clearSelection();
         
-        // Reset applied colors
         appliedColors.clear();
         
-        // Save the clean state to history
         saveToHistory();
         
-        // Reset zoom
         resetZoom();
         
-        // Reset scroll position
         if (canvasContainer) {
             canvasContainer.scrollLeft = 0;
             canvasContainer.scrollTop = 0;
         }
     }
     
-    // NEW: Show color selection popup before download (smaller size)
+    // Show color selection popup (same as your version, unchanged except small sizing)
     function showColorSelectionPopup() {
-        // Create popup modal
         const popup = document.createElement('div');
         popup.className = 'modal';
         popup.style.display = 'flex';
@@ -2113,7 +1912,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     overflow-y: auto;
                     padding: 5px;
                 ">
-                    <!-- Color options will be populated here -->
                 </div>
                 
                 <div class="selected-count" style="margin-bottom: 15px; font-weight: bold; color: #2c3e50; font-size: 0.9rem;">
@@ -2129,11 +1927,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         document.body.appendChild(popup);
         
-        // Populate color grid
         const colorGrid = document.getElementById('colorSelectionGrid');
         const selectedCount = document.getElementById('selectedCount');
         
-        // Convert Set to Array for consistent ordering
         const appliedColorsArray = Array.from(appliedColors);
         
         if (appliedColorsArray.length === 0) {
@@ -2187,7 +1983,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 
                 colorGrid.appendChild(colorItem);
                 
-                // Toggle selection on click
                 const checkbox = colorItem.querySelector('.color-check');
                 colorItem.addEventListener('click', (e) => {
                     if (!e.target.closest('.remove-color')) {
@@ -2196,7 +1991,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                 });
                 
-                // Remove color completely
                 const removeBtn = colorItem.querySelector('.remove-color');
                 removeBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
@@ -2205,7 +1999,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     updateSelectedCount();
                 });
                 
-                // Update on checkbox change
                 checkbox.addEventListener('change', (e) => {
                     e.stopPropagation();
                     updateSelectedColors(checkbox, color);
@@ -2231,7 +2024,6 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('confirmDownload').disabled = selectedColors.size === 0;
         }
         
-        // Event listeners for popup
         document.getElementById('closeColorPopup').addEventListener('click', () => {
             document.body.removeChild(popup);
         });
@@ -2245,7 +2037,6 @@ document.addEventListener('DOMContentLoaded', function() {
             downloadImageWithSelectedColors(selectedColors);
         });
         
-        // Close popup when clicking outside
         popup.addEventListener('click', (e) => {
             if (e.target === popup) {
                 document.body.removeChild(popup);
@@ -2253,53 +2044,45 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // NEW: Download image with only selected colors
     function downloadImageWithSelectedColors(selectedColorsSet) {
-        // Create a temporary canvas with higher resolution for better quality
-        const scaleFactor = 2; // Double the resolution for better quality
-        const tempCanvas = document.createElement('canvas');
-        const footerHeight = 150 * scaleFactor; // Reduced height for smaller popup
-        tempCanvas.width = houseCanvas.width * scaleFactor;
-        tempCanvas.height = (houseCanvas.height * scaleFactor) + footerHeight;
+        const scaleFactor = 2;
+        const outCanvas = document.createElement('canvas');
+        const footerHeight = 150 * scaleFactor;
+        outCanvas.width = houseCanvas.width * scaleFactor;
+        outCanvas.height = (houseCanvas.height * scaleFactor) + footerHeight;
         
-        const tempCtx = tempCanvas.getContext('2d');
+        const outCtx = outCanvas.getContext('2d');
         
-        // Enable high-quality rendering
-        tempCtx.imageSmoothingEnabled = true;
-        tempCtx.imageSmoothingQuality = 'high';
+        outCtx.imageSmoothingEnabled = true;
+        outCtx.imageSmoothingQuality = 'high';
         
-        // Draw the main image (scaled up for better quality)
-        tempCtx.drawImage(
+        outCtx.drawImage(
             houseCanvas, 
             0, 0, houseCanvas.width, houseCanvas.height,
-            0, 0, tempCanvas.width, houseCanvas.height * scaleFactor
+            0, 0, outCanvas.width, houseCanvas.height * scaleFactor
         );
         
-        // Draw footer background
-        tempCtx.fillStyle = '#f8f9fa';
-        tempCtx.fillRect(0, houseCanvas.height * scaleFactor, tempCanvas.width, footerHeight);
+        outCtx.fillStyle = '#f8f9fa';
+        outCtx.fillRect(0, houseCanvas.height * scaleFactor, outCanvas.width, footerHeight);
         
-        // Draw footer border
-        tempCtx.strokeStyle = '#dee2e6';
-        tempCtx.lineWidth = 1 * scaleFactor;
-        tempCtx.beginPath();
-        tempCtx.moveTo(0, houseCanvas.height * scaleFactor);
-        tempCtx.lineTo(tempCanvas.width, houseCanvas.height * scaleFactor);
-        tempCtx.stroke();
+        outCtx.strokeStyle = '#dee2e6';
+        outCtx.lineWidth = 1 * scaleFactor;
+        outCtx.beginPath();
+        outCtx.moveTo(0, houseCanvas.height * scaleFactor);
+        outCtx.lineTo(outCanvas.width, houseCanvas.height * scaleFactor);
+        outCtx.stroke();
         
-        // Draw selected colors with proper spacing
         const startX = 20 * scaleFactor;
         const yPos = (houseCanvas.height * scaleFactor) + (20 * scaleFactor);
         const rowHeight = 35 * scaleFactor;
         const maxColorsPerRow = 3;
-        const colorBlockWidth = (tempCanvas.width - (startX * 2)) / maxColorsPerRow;
+        const colorBlockWidth = (outCanvas.width - (startX * 2)) / maxColorsPerRow;
         
-        tempCtx.font = `bold ${11 * scaleFactor}px Arial, sans-serif`;
-        tempCtx.fillStyle = '#495057';
-        tempCtx.textAlign = 'left';
-        tempCtx.fillText('Selected Colors:', startX, yPos - (10 * scaleFactor));
+        outCtx.font = `bold ${11 * scaleFactor}px Arial, sans-serif`;
+        outCtx.fillStyle = '#495057';
+        outCtx.textAlign = 'left';
+        outCtx.fillText('Selected Colors:', startX, yPos - (10 * scaleFactor));
         
-        // Display only selected colors
         let colorCount = 0;
         let currentRow = 0;
         
@@ -2311,20 +2094,17 @@ document.addEventListener('DOMContentLoaded', function() {
             const blockX = startX + (colorCount % maxColorsPerRow) * colorBlockWidth;
             const blockY = yPos + (currentRow * rowHeight);
             
-            // Draw color circle
-            tempCtx.fillStyle = color;
-            tempCtx.beginPath();
-            tempCtx.arc(blockX + (15 * scaleFactor), blockY, 10 * scaleFactor, 0, Math.PI * 2);
-            tempCtx.fill();
+            outCtx.fillStyle = color;
+            outCtx.beginPath();
+            outCtx.arc(blockX + (15 * scaleFactor), blockY, 10 * scaleFactor, 0, Math.PI * 2);
+            outCtx.fill();
             
-            // Draw border around color circle
-            tempCtx.strokeStyle = '#dee2e6';
-            tempCtx.lineWidth = 1 * scaleFactor;
-            tempCtx.stroke();
+            outCtx.strokeStyle = '#dee2e6';
+            outCtx.lineWidth = 1 * scaleFactor;
+            outCtx.stroke();
             
-            // Draw color information
-            tempCtx.font = `${9 * scaleFactor}px Arial, sans-serif`;
-            tempCtx.fillStyle = '#495057';
+            outCtx.font = `${9 * scaleFactor}px Arial, sans-serif`;
+            outCtx.fillStyle = '#495057';
             
             const colorName = allColors[color] || 'Custom Color';
             const colorCode = color.toUpperCase();
@@ -2332,13 +2112,11 @@ document.addEventListener('DOMContentLoaded', function() {
             const textStartX = blockX + (30 * scaleFactor);
             const availableWidth = colorBlockWidth - (30 * scaleFactor);
             
-            // Draw color code
-            tempCtx.font = `bold ${9 * scaleFactor}px Arial, sans-serif`;
-            tempCtx.fillText(colorCode, textStartX, blockY - (6 * scaleFactor));
+            outCtx.font = `bold ${9 * scaleFactor}px Arial, sans-serif`;
+            outCtx.fillText(colorCode, textStartX, blockY - (6 * scaleFactor));
             
-            // Draw color name with word wrap
-            tempCtx.font = `${8 * scaleFactor}px Arial, sans-serif`;
-            tempCtx.fillStyle = '#6c757d';
+            outCtx.font = `${8 * scaleFactor}px Arial, sans-serif`;
+            outCtx.fillStyle = '#6c757d';
             
             const words = colorName.split(' ');
             let line = '';
@@ -2347,16 +2125,16 @@ document.addEventListener('DOMContentLoaded', function() {
             
             for (let i = 0; i < words.length; i++) {
                 const testLine = line + words[i] + ' ';
-                const metrics = tempCtx.measureText(testLine);
+                const metrics = outCtx.measureText(testLine);
                 const testWidth = metrics.width;
                 
                 if (testWidth > availableWidth && i > 0) {
-                    tempCtx.fillText(line, textStartX, blockY + (4 * scaleFactor) + (lineCount * 10 * scaleFactor));
+                    outCtx.fillText(line, textStartX, blockY + (4 * scaleFactor) + (lineCount * 10 * scaleFactor));
                     lineCount++;
                     
                     if (lineCount >= maxLines) {
                         if (i < words.length - 1) {
-                            tempCtx.fillText(line + '...', textStartX, blockY + (4 * scaleFactor) + (lineCount * 10 * scaleFactor));
+                            outCtx.fillText(line + '...', textStartX, blockY + (4 * scaleFactor) + (lineCount * 10 * scaleFactor));
                         }
                         break;
                     }
@@ -2367,7 +2145,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             if (lineCount < maxLines) {
-                tempCtx.fillText(line.trim(), textStartX, blockY + (4 * scaleFactor) + (lineCount * 10 * scaleFactor));
+                outCtx.fillText(line.trim(), textStartX, blockY + (4 * scaleFactor) + (lineCount * 10 * scaleFactor));
             }
             
             colorCount++;
@@ -2376,27 +2154,23 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
-        // Draw watermark
         const watermarkY = (houseCanvas.height * scaleFactor) + footerHeight - (30 * scaleFactor);
-        tempCtx.font = `italic ${9 * scaleFactor}px Arial, sans-serif`;
-        tempCtx.fillStyle = '#6c757d';
-        tempCtx.textAlign = 'center';
-        tempCtx.fillText('More colors visit: https://www.apzok.com', tempCanvas.width / 2, watermarkY);
+        outCtx.font = `italic ${9 * scaleFactor}px Arial, sans-serif`;
+        outCtx.fillStyle = '#6c757d';
+        outCtx.textAlign = 'center';
+        outCtx.fillText('More colors visit: https://www.apzok.com', outCanvas.width / 2, watermarkY);
         
-        // Draw disclaimer
         const disclaimerY = (houseCanvas.height * scaleFactor) + footerHeight - (15 * scaleFactor);
-        tempCtx.font = `${8 * scaleFactor}px Arial, sans-serif`;
-        tempCtx.fillStyle = '#868e96';
-        tempCtx.fillText('Note: Visualizer colors may vary from actual paint and screen display', tempCanvas.width / 2, disclaimerY);
+        outCtx.font = `${8 * scaleFactor}px Arial, sans-serif`;
+        outCtx.fillStyle = '#868e96';
+        outCtx.fillText('Note: Visualizer colors may vary from actual paint and screen display', outCanvas.width / 2, disclaimerY);
         
-        // Create download link
         const link = document.createElement('a');
         link.download = 'painted-house-with-colors.png';
         
-        const dataUrl = tempCanvas.toDataURL('image/png', 1.0);
+        const dataUrl = outCanvas.toDataURL('image/png', 1.0);
         link.href = dataUrl;
         
-        // Trigger download
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -2405,7 +2179,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initialize the application
     init();
     
-    // Make paint databases globally available for color combinations
+    // Expose paint brand maps and app state globally
     window.asianPaintsColors = asianPaintsColors;
     window.bergerPaintsColors = bergerPaintsColors;
     window.opusPaintsColors = opusPaintsColors;
@@ -2415,7 +2189,6 @@ document.addEventListener('DOMContentLoaded', function() {
     window.nipponPaintsColors = nipponPaintsColors;
     window.allColors = allColors;
 
-    // Make main app functions available globally for color combinations
     window.setCurrentColor = setCurrentColor;
     window.currentColor = currentColor;
     window.currentOpacity = currentOpacity;
