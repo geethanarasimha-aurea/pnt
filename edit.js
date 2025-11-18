@@ -134,7 +134,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Applied colors tracking
     let appliedColors = new Set();
     
-    // Two-finger scroll state
+    // Two-finger scroll state - UPDATED: For all tools
     let isTwoFingerScrolling = false;
     let twoFingerStartX = 0;
     let twoFingerStartY = 0;
@@ -373,10 +373,11 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.addEventListener('click', handleCanvasClick);
         houseCanvas.addEventListener('dblclick', handleCanvasDoubleClick);
         
-        // Touch events for mobile - single-finger = brush/eraser, two-finger = pan
+        // UPDATED: Enhanced touch events for mobile
         houseCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         houseCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         houseCanvas.addEventListener('touchend', handleTouchEnd);
+        houseCanvas.addEventListener('touchcancel', handleTouchEnd);
         
         // Enhanced Auto-Select drag events (mouse)
         houseCanvas.addEventListener('mousedown', startDragSelection);
@@ -712,7 +713,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Enhanced Two-Finger Scroll Functionality for Mobile
+    // UPDATED: Enhanced Two-Finger Scroll Functionality for ALL tools
     function setupTwoFingerScroll() {
         if (!isMobileDevice()) return;
         
@@ -728,7 +729,7 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.addEventListener('touchstart', handleTwoFingerTouchStart, { passive: false });
     }
 
-    // ✅ UPDATED: Allow 2-finger pan for ALL tools (brush, eraser, auto-select, lasso)
+    // ✅ UPDATED: Enhanced two-finger scroll for ALL tools (brush, eraser, auto-select, lasso)
     function handleTwoFingerTouchStart(e) {
         const touches = e.touches;
         
@@ -1038,48 +1039,66 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // ✅ UPDATED: Touch event handlers – single finger = paint, two fingers = pan
+    // ✅ UPDATED: Enhanced Touch event handlers – single finger = paint/erase, two fingers = pan
     function handleTouchStart(e) {
-        // Only handle painting for brush/eraser with ONE finger
-        if (currentTool !== 'brush' && currentTool !== 'eraser') return;
-        if (!e.touches || e.touches.length !== 1) return; // 2-finger → pan only
+        const touches = e.touches;
         
-        e.preventDefault();
-        isTouchPainting = true;
-        
-        const pos = getMousePos(e);
-        touchStartX = pos.x;
-        touchStartY = pos.y;
-        
-        const mouseEvent = new MouseEvent('mousedown', {
-            clientX: e.touches[0].clientX,
-            clientY: e.touches[0].clientY
-        });
-        houseCanvas.dispatchEvent(mouseEvent);
+        // Single finger for painting/erasing
+        if (touches.length === 1 && (currentTool === 'brush' || currentTool === 'eraser')) {
+            e.preventDefault();
+            isTouchPainting = true;
+            
+            const pos = getMousePos(e);
+            touchStartX = pos.x;
+            touchStartY = pos.y;
+            
+            // Start painting immediately
+            const mouseDownEvent = new MouseEvent('mousedown', {
+                clientX: touches[0].clientX,
+                clientY: touches[0].clientY,
+                bubbles: true,
+                cancelable: true
+            });
+            houseCanvas.dispatchEvent(mouseDownEvent);
+        }
+        // Two fingers for scrolling/panning - handled by two-finger scroll
+        else if (touches.length === 2) {
+            // Let two-finger scroll handle this
+            return;
+        }
     }
     
     function handleTouchMove(e) {
-        if (!isTouchPainting) return;
-        if (!e.touches || e.touches.length !== 1) return; // ignore multi-touch
+        const touches = e.touches;
         
-        e.preventDefault();
-        
-        const touch = e.touches[0];
-        const mouseEvent = new MouseEvent('mousemove', {
-            clientX: touch.clientX,
-            clientY: touch.clientY
-        });
-        houseCanvas.dispatchEvent(mouseEvent);
+        // Single finger painting/erasing
+        if (isTouchPainting && touches.length === 1 && (currentTool === 'brush' || currentTool === 'eraser')) {
+            e.preventDefault();
+            
+            const touch = touches[0];
+            const mouseMoveEvent = new MouseEvent('mousemove', {
+                clientX: touch.clientX,
+                clientY: touch.clientY,
+                bubbles: true,
+                cancelable: true
+            });
+            houseCanvas.dispatchEvent(mouseMoveEvent);
+        }
+        // Two fingers scrolling - handled by two-finger scroll
+        else if (touches.length === 2) {
+            // Let two-finger scroll handle this
+            return;
+        }
     }
     
     function handleTouchEnd(e) {
-        if (!isTouchPainting) return;
-        
-        e.preventDefault();
-        isTouchPainting = false;
-        
-        const mouseEvent = new MouseEvent('mouseup');
-        houseCanvas.dispatchEvent(mouseEvent);
+        if (isTouchPainting) {
+            e.preventDefault();
+            isTouchPainting = false;
+            
+            const mouseUpEvent = new MouseEvent('mouseup');
+            houseCanvas.dispatchEvent(mouseUpEvent);
+        }
     }
     
     // Zoom functions
@@ -2490,4 +2509,3 @@ document.addEventListener('DOMContentLoaded', function() {
     window.currentProject = currentProject;
     window.ctx = ctx;
 });
-
