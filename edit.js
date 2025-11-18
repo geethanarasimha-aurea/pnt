@@ -1887,6 +1887,56 @@ document.addEventListener('DOMContentLoaded', function() {
             canvasContainer.scrollTop = 0;
         }
     }
+	
+	
+	// ---- MOBILE AUTO-SELECT & LASSO FIX ----
+
+// Convert touch to mouse event
+function simulateMouseEvent(type, touchEvent) {
+    const t = touchEvent.touches[0] || touchEvent.changedTouches[0];
+    return new MouseEvent(type, {
+        clientX: t.clientX,
+        clientY: t.clientY,
+        bubbles: true,
+        cancelable: true
+    });
+}
+
+// Auto-Select & Lasso touchstart
+function handleToolTouchStart(e) {
+    if (e.touches.length !== 1) return; // ignore 2 fingers (scroll)
+    if (currentTool === 'brush' || currentTool === 'eraser') return;
+
+    e.preventDefault();
+    const down = simulateMouseEvent("mousedown", e);
+    houseCanvas.dispatchEvent(down);
+}
+
+// Auto-Select & Lasso touchmove
+function handleToolTouchMove(e) {
+    if (e.touches.length !== 1) return;
+    if (currentTool === 'brush' || currentTool === 'eraser') return;
+
+    e.preventDefault();
+    const move = simulateMouseEvent("mousemove", e);
+    houseCanvas.dispatchEvent(move);
+}
+
+// Auto-Select & Lasso touchend
+function handleToolTouchEnd(e) {
+    if (currentTool === 'brush' || currentTool === 'eraser') return;
+
+    e.preventDefault();
+    const up = simulateMouseEvent("mouseup", e);
+    houseCanvas.dispatchEvent(up);
+
+    const click = simulateMouseEvent("click", e);
+    houseCanvas.dispatchEvent(click);
+
+    const dbl = simulateMouseEvent("dblclick", e);
+    houseCanvas.dispatchEvent(dbl);
+}
+
     
     // Show color selection popup (same as your version, unchanged except small sizing)
     function showColorSelectionPopup() {
