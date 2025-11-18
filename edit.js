@@ -94,12 +94,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Zoom state
     let scale = 1;
 
-    // Touch gesture state
+    // Touch gesture state for painting
     let isTouchPainting = false;
     let touchStartX, touchStartY;
-
-    // NEW: for double-tap detection (lasso complete, auto-select dblclick)
-    let lastTapTime = 0;
     
     // Mobile scroll state
     let isMobileScrolling = false;
@@ -317,19 +314,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     opt.classList.remove('active');
                 });
                 this.classList.add('active');
-                currentShape = this.dataset.shape;
-                currentProject.settings.currentShape = currentShape;
-            });
-        });
-        
-        // Eraser dropdown options
-        document.querySelectorAll('.brush-option[data-eraser]').forEach(option => {
-            option.addEventListener('click', function() {
-                document.querySelectorAll('.brush-option[data-eraser]').forEach(opt => {
-                    opt.classList.remove('active');
-                });
-                this.classList.add('active');
-                currentEraser = this.dataset.eraser;
+                if (this.dataset.shape) {
+                    currentShape = this.dataset.shape;
+                    currentProject.settings.currentShape = currentShape;
+                }
+                if (this.dataset.eraser) {
+                    currentEraser = this.dataset.eraser;
+                }
             });
         });
         
@@ -381,12 +372,12 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.addEventListener('click', handleCanvasClick);
         houseCanvas.addEventListener('dblclick', handleCanvasDoubleClick);
         
-        // Touch events for mobile (UPDATED: support all tools + 2-finger pan via container)
+        // Touch events for mobile - single-finger = brush/eraser, two-finger = pan
         houseCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         houseCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-        houseCanvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+        houseCanvas.addEventListener('touchend', handleTouchEnd);
         
-        // Enhanced Auto-Select events (mouse drag)
+        // Enhanced Auto-Select drag events (mouse)
         houseCanvas.addEventListener('mousedown', startDragSelection);
         houseCanvas.addEventListener('mousemove', dragSelection);
         houseCanvas.addEventListener('mouseup', stopDragSelection);
@@ -430,17 +421,120 @@ document.addEventListener('DOMContentLoaded', function() {
         // Setup mobile scroll functionality
         setupMobileScroll();
         
+        // Setup mobile tool handlers
+        setupMobileToolHandlers();
+        
         // Hide scroll hint after user interacts with toolbar
         toolbar.addEventListener('scroll', function() {
             this.classList.add('scrolled');
         });
+    }
+
+    // FIXED: Enhanced Mobile Tool Handlers for Auto-Select and Lasso
+    function setupMobileToolHandlers() {
+        if (!isMobileDevice()) return;
+        
+        // Remove existing event listeners to prevent duplicates
+        houseCanvas.removeEventListener('touchstart', handleToolTouchStart);
+        houseCanvas.removeEventListener('touchmove', handleToolTouchMove);
+        houseCanvas.removeEventListener('touchend', handleToolTouchEnd);
+        
+        // Add new touch event listeners for tools
+        houseCanvas.addEventListener('touchstart', handleToolTouchStart, { passive: false });
+        houseCanvas.addEventListener('touchmove', handleToolTouchMove, { passive: false });
+        houseCanvas.addEventListener('touchend', handleToolTouchEnd);
+    }
+
+    // Enhanced touch handler for Auto-Select and Lasso
+    function handleToolTouchStart(e) {
+        if (e.touches.length !== 1) return; // Only handle single touch for tools
+        
+        // Only process for Auto-Select and Lasso tools
+        if (currentTool !== 'autoSelect' && currentTool !== 'lasso') return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const touch = e.touches[0];
+        
+        // Create and dispatch mouse events to simulate desktop behavior
+        const mouseDownEvent = new MouseEvent('mousedown', {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            bubbles: true,
+            cancelable: true
+        });
+        
+        houseCanvas.dispatchEvent(mouseDownEvent);
+        
+        // For Auto-Select: Also trigger click for region selection
+        if (currentTool === 'autoSelect') {
+            setTimeout(() => {
+                const clickEvent = new MouseEvent('click', {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY,
+                    bubbles: true,
+                    cancelable: true
+                });
+                houseCanvas.dispatchEvent(clickEvent);
+            }, 10);
+        }
+    }
+
+    function handleToolTouchMove(e) {
+        if (e.touches.length !== 1) return;
+        if (currentTool !== 'autoSelect' && currentTool !== 'lasso') return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const touch = e.touches[0];
+        const mouseMoveEvent = new MouseEvent('mousemove', {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            bubbles: true,
+            cancelable: true
+        });
+        
+        houseCanvas.dispatchEvent(mouseMoveEvent);
+    }
+
+    function handleToolTouchEnd(e) {
+        if (currentTool !== 'autoSelect' && currentTool !== 'lasso') return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const touch = e.changedTouches[0];
+        
+        // Dispatch mouseup event
+        const mouseUpEvent = new MouseEvent('mouseup', {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            bubbles: true,
+            cancelable: true
+        });
+        
+        houseCanvas.dispatchEvent(mouseUpEvent);
+        
+        // For Lasso: Double-tap to complete selection
+        if (currentTool === 'lasso' && lassoPoints.length > 2) {
+            setTimeout(() => {
+                const dblClickEvent = new MouseEvent('dblclick', {
+                    clientX: touch.clientX,
+                    clientY: touch.clientY,
+                    bubbles: true,
+                    cancelable: true
+                });
+                houseCanvas.dispatchEvent(dblClickEvent);
+            }, 50);
+        }
     }
     
     // Enhanced Two-Finger Scroll Functionality for Mobile
     function setupTwoFingerScroll() {
         if (!isMobileDevice()) return;
         
-        const canvasContainer = document.getElementById('canvasContainer');
         if (!canvasContainer) return;
         
         // Remove existing event listeners
@@ -449,19 +543,20 @@ document.addEventListener('DOMContentLoaded', function() {
         document.removeEventListener('touchend', handleTwoFingerTouchEnd);
         document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
         
-        // Add new event listeners
+        // Add new event listener
         canvasContainer.addEventListener('touchstart', handleTwoFingerTouchStart, { passive: false });
     }
 
+    // ✅ UPDATED: Allow 2-finger pan for ALL tools (brush, eraser, auto-select, lasso)
     function handleTwoFingerTouchStart(e) {
         const touches = e.touches;
         
-        // Two-finger pan works for all tools; painting uses only 1 finger
+        // Two-finger pan anywhere on canvas container
         if (touches.length === 2) {
             const touch1 = touches[0];
             const touch2 = touches[1];
             
-            // Calculate average position of two fingers
+            // Average position
             const avgX = (touch1.clientX + touch2.clientX) / 2;
             const avgY = (touch1.clientY + touch2.clientY) / 2;
             
@@ -476,13 +571,10 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             e.stopPropagation();
             
-            console.log('Two-finger scroll started');
-            
-            // Add global event listeners
+            // Global listeners
             document.addEventListener('touchmove', handleTwoFingerTouchMove, { passive: false });
             document.addEventListener('touchend', handleTwoFingerTouchEnd);
             document.addEventListener('touchcancel', handleTwoFingerTouchEnd);
-            return;
         }
     }
 
@@ -498,15 +590,12 @@ document.addEventListener('DOMContentLoaded', function() {
             const touch1 = touches[0];
             const touch2 = touches[1];
             
-            // Calculate average position of two fingers
             const avgX = (touch1.clientX + touch2.clientX) / 2;
             const avgY = (touch1.clientY + touch2.clientY) / 2;
             
-            // Calculate deltas (inverted for natural scrolling)
             const deltaX = twoFingerStartX - avgX;
             const deltaY = twoFingerStartY - avgY;
             
-            // Calculate scroll parameters
             const rect = canvasContainer.getBoundingClientRect();
             const contentWidth = houseCanvas.width * scale;
             const contentHeight = houseCanvas.height * scale;
@@ -516,41 +605,32 @@ document.addEventListener('DOMContentLoaded', function() {
             const maxScrollLeft = Math.max(0, contentWidth - containerWidth);
             const maxScrollTop = Math.max(0, contentHeight - containerHeight);
             
-            // Calculate scroll ratios based on movement speed
             const currentTime = Date.now();
             const timeDiff = currentTime - lastTwoFingerMoveTime;
-            const speedMultiplier = Math.min(2, Math.max(0.5, 100 / Math.max(timeDiff, 16))); // 60fps base
+            const speedMultiplier = Math.min(2, Math.max(0.5, 100 / Math.max(timeDiff, 16)));
             
-            // Apply scroll with momentum
             const scrollDeltaX = deltaX * speedMultiplier;
             const scrollDeltaY = deltaY * speedMultiplier;
             
             const newScrollLeft = Math.max(0, Math.min(maxScrollLeft, twoFingerScrollStartX + scrollDeltaX));
             const newScrollTop = Math.max(0, Math.min(maxScrollTop, twoFingerScrollStartY + scrollDeltaY));
             
-            // Apply both scroll positions
             canvasContainer.scrollLeft = newScrollLeft;
             canvasContainer.scrollTop = newScrollTop;
             
-            // Update for next movement
             twoFingerStartX = avgX;
             twoFingerStartY = avgY;
             twoFingerScrollStartX = newScrollLeft;
             twoFingerScrollStartY = newScrollTop;
             lastTwoFingerMoveTime = currentTime;
-            
-            console.log('Two-finger scroll:', newScrollLeft, newScrollTop);
         }
     }
 
-    function handleTwoFingerTouchEnd(e) {
+    function handleTwoFingerTouchEnd() {
         if (!isTwoFingerScrolling) return;
         
         isTwoFingerScrolling = false;
         
-        console.log('Two-finger scroll ended');
-        
-        // Remove global event listeners
         document.removeEventListener('touchmove', handleTwoFingerTouchMove);
         document.removeEventListener('touchend', handleTwoFingerTouchEnd);
         document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
@@ -563,7 +643,7 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.removeEventListener('touchmove', handleMobileScrollMove);
         canvasContainer.removeEventListener('touchend', handleMobileScrollEnd);
         
-        // Add mobile scroll handlers (single finger scroll disabled; we use 2-finger)
+        // Add mobile scroll handlers
         canvasContainer.addEventListener('touchstart', handleMobileScrollStart, { passive: false });
         canvasContainer.addEventListener('touchmove', handleMobileScrollMove, { passive: false });
         canvasContainer.addEventListener('touchend', handleMobileScrollEnd);
@@ -692,17 +772,39 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.addEventListener('touchstart', removeIndicators);
     }
     
-    // NEW: Handle mobile scroll start (we use 2-finger pan, so single finger does nothing here)
+    // NEW: Handle mobile scroll start (single finger) for container dragging
     function handleMobileScrollStart(e) {
+        // If 2 fingers → handled by two-finger scroll
+        if (e.touches.length > 1) return;
         if (isTwoFingerScrolling) return;
-        // Let two-finger handler do the actual scrolling; no single-finger drag here
+        
+        // Don't hijack when painting on canvas – this is on container anyway
+        e.preventDefault();
+        isMobileScrolling = true;
+        
+        const touch = e.touches[0];
+        scrollStartX = touch.clientX;
+        scrollStartY = touch.clientY;
+        scrollOffsetX = canvasContainer.scrollLeft;
+        scrollOffsetY = canvasContainer.scrollTop;
+        
+        showScrollHandle(touch.clientX, touch.clientY);
+        canvasContainer.style.cursor = 'grabbing';
     }
     
     function handleMobileScrollMove(e) {
-        if (isTwoFingerScrolling) {
-            // handled in handleTwoFingerTouchMove
-            return;
-        }
+        if (!isMobileScrolling || e.touches.length !== 1 || isTwoFingerScrolling) return;
+        
+        e.preventDefault();
+        
+        const touch = e.touches[0];
+        const deltaX = scrollStartX - touch.clientX;
+        const deltaY = scrollStartY - touch.clientY;
+        
+        canvasContainer.scrollLeft = scrollOffsetX + deltaX;
+        canvasContainer.scrollTop = scrollOffsetY + deltaY;
+        
+        updateScrollHandle(touch.clientX, touch.clientY);
     }
     
     function handleMobileScrollEnd() {
@@ -711,7 +813,7 @@ document.addEventListener('DOMContentLoaded', function() {
         hideScrollHandle();
     }
     
-    // NEW: Show big scroll handle for mobile
+    // Scroll handle helpers
     function showScrollHandle(x, y) {
         hideScrollHandle();
         
@@ -755,112 +857,51 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    /********************************************************
-     * UPDATED TOUCH HANDLERS – SUPPORT ALL TOOLS ON MOBILE
-     *  - 1 finger: brush / eraser / auto-select / lasso
-     *  - 2 fingers: pan via container (handled above)
-     ********************************************************/
+    // ✅ UPDATED: Touch event handlers – single finger = paint, two fingers = pan
     function handleTouchStart(e) {
-        const touches = e.touches;
-        if (!touches || touches.length === 0) return;
-
-        // 2-finger gestures handled by container scroll; ignore here
-        if (touches.length > 1) {
-            isTouchPainting = false;
-            return;
-        }
-
-        const touch = touches[0];
-
-        // Convert to canvas coordinate mouse event
-        const mouseInit = {
-            clientX: touch.clientX,
-            clientY: touch.clientY
-        };
-
-        // Brush / eraser: paint with 1 finger
-        if (currentTool === 'brush' || currentTool === 'eraser') {
-            e.preventDefault();
-            isTouchPainting = true;
-
-            const mouseDown = new MouseEvent('mousedown', mouseInit);
-            houseCanvas.dispatchEvent(mouseDown);
-            return;
-        }
-
-        // Auto-select / lasso: we treat tap as click (and possible double-tap)
-        if (currentTool === 'autoSelect' || currentTool === 'lasso') {
-            // We don't do anything on touchstart, actual action on touchend (click / dblclick)
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
-        }
+        // Only handle painting for brush/eraser with ONE finger
+        if (currentTool !== 'brush' && currentTool !== 'eraser') return;
+        if (!e.touches || e.touches.length !== 1) return; // 2-finger → pan only
+        
+        e.preventDefault();
+        isTouchPainting = true;
+        
+        const pos = getMousePos(e);
+        touchStartX = pos.x;
+        touchStartY = pos.y;
+        
+        const mouseEvent = new MouseEvent('mousedown', {
+            clientX: e.touches[0].clientX,
+            clientY: e.touches[0].clientY
+        });
+        houseCanvas.dispatchEvent(mouseEvent);
     }
     
     function handleTouchMove(e) {
-        const touches = e.touches;
-        if (!touches || touches.length === 0) return;
-
-        // 2-finger scroll handled elsewhere
-        if (touches.length > 1) {
-            isTouchPainting = false;
-            return;
-        }
-
-        // Only brush / eraser need continuous move
-        if (!isTouchPainting || (currentTool !== 'brush' && currentTool !== 'eraser')) return;
-
+        if (!isTouchPainting) return;
+        if (!e.touches || e.touches.length !== 1) return; // ignore multi-touch
+        
         e.preventDefault();
-        const touch = touches[0];
-
-        const mouseMove = new MouseEvent('mousemove', {
+        
+        const touch = e.touches[0];
+        const mouseEvent = new MouseEvent('mousemove', {
             clientX: touch.clientX,
             clientY: touch.clientY
         });
-        houseCanvas.dispatchEvent(mouseMove);
+        houseCanvas.dispatchEvent(mouseEvent);
     }
     
     function handleTouchEnd(e) {
-        const now = Date.now();
-
-        // Brush / eraser: finish stroke
-        if (currentTool === 'brush' || currentTool === 'eraser') {
-            if (!isTouchPainting) return;
-            e.preventDefault();
-            isTouchPainting = false;
-
-            const mouseUp = new MouseEvent('mouseup');
-            houseCanvas.dispatchEvent(mouseUp);
-            return;
-        }
-
-        // Auto-select + lasso: tap = click, double-tap = double-click
-        if (currentTool === 'autoSelect' || currentTool === 'lasso') {
-            if (!e.changedTouches || e.changedTouches.length === 0) return;
-            e.preventDefault();
-
-            const touch = e.changedTouches[0];
-
-            const clickEvent = new MouseEvent('click', {
-                clientX: touch.clientX,
-                clientY: touch.clientY
-            });
-            houseCanvas.dispatchEvent(clickEvent);
-
-            // Double-tap detection (~300ms)
-            if (now - lastTapTime < 300) {
-                const dblEvent = new MouseEvent('dblclick', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY
-                });
-                houseCanvas.dispatchEvent(dblEvent);
-                lastTapTime = 0;
-            } else {
-                lastTapTime = now;
-            }
-        }
+        if (!isTouchPainting) return;
+        
+        e.preventDefault();
+        isTouchPainting = false;
+        
+        const mouseEvent = new MouseEvent('mouseup');
+        houseCanvas.dispatchEvent(mouseEvent);
     }
     
-    // Zoom functions - ONLY WORK WITH TOOLBAR BUTTONS NOW
+    // Zoom functions
     function zoomIn() {
         scale = Math.min(scale * 1.2, 5);
         updateCanvasTransform();
@@ -885,7 +926,6 @@ document.addEventListener('DOMContentLoaded', function() {
         tempCanvas.style.transform = `scale(${scale})`;
         updateZoomDisplay();
         
-        // Force reflow
         houseCanvas.offsetHeight;
         tempCanvas.offsetHeight;
         
@@ -1099,7 +1139,6 @@ document.addEventListener('DOMContentLoaded', function() {
             toleranceValue.textContent = '30';
             
             appliedColors.clear();
-            
             resetZoom();
         }
     }
@@ -1188,9 +1227,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     }
                     
                     appliedColors.clear();
-                    
                     resetZoom();
-                    
                     updateUndoRedoButtons();
                 } catch (error) {
                     console.error('Error loading project:', error);
@@ -1203,6 +1240,7 @@ document.addEventListener('DOMContentLoaded', function() {
         input.click();
     }
     
+    // Set the current tool
     function setCurrentTool(tool) {
         currentTool = tool;
         
@@ -1286,9 +1324,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 saveToHistory();
                 
                 appliedColors.clear();
-                
                 resetZoom();
-                
                 setupMobileScroll();
             };
             img.src = event.target.result;
@@ -1309,9 +1345,7 @@ document.addEventListener('DOMContentLoaded', function() {
         saveToHistory();
         
         appliedColors.clear();
-        
         resetZoom();
-        
         setupMobileScroll();
     }
     
@@ -1457,7 +1491,6 @@ document.addEventListener('DOMContentLoaded', function() {
             originalImageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
         }
         alignTempCanvas();
-        
         setupMobileScroll();
     }
     
@@ -1520,7 +1553,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const imageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
         const data = imageData.data;
-        const rgb = hexToRgb(currentColor);
+        const rgb = hexToRgbToArr(currentColor);
         
         for (const key of selectedPixels) {
             const [x, y] = key.split(',').map(Number);
@@ -1530,9 +1563,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const g = data[i + 1];
             const b = data[i + 2];
             
-            data[i] = r * (1 - currentOpacity) + rgb[0] * currentOpacity;
-            data[i + 1] = g * (1 - currentOpacity) + rgb[1] * currentOpacity;
-            data[i + 2] = b * (1 - currentOpacity) + rgb[2] * currentOpacity;
+            data[i]   = r * (1 - currentOpacity) + rgb[0] * currentOpacity;
+            data[i+1] = g * (1 - currentOpacity) + rgb[1] * currentOpacity;
+            data[i+2] = b * (1 - currentOpacity) + rgb[2] * currentOpacity;
         }
         
         ctx.putImageData(imageData, 0, 0);
@@ -1605,16 +1638,16 @@ document.addEventListener('DOMContentLoaded', function() {
         const imageData = ctx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
         const selectionData = selectionCtx.getImageData(0, 0, houseCanvas.width, houseCanvas.height);
         
-        const rgb = hexToRgb(currentColor);
+        const rgb = hexToRgbToArr(currentColor);
         for (let i = 0; i < imageData.data.length; i += 4) {
             if (selectionData.data[i + 3] > 0) {
                 const r = imageData.data[i];
                 const g = imageData.data[i + 1];
                 const b = imageData.data[i + 2];
                 
-                imageData.data[i] = r * (1 - currentOpacity) + rgb[0] * currentOpacity;
-                imageData.data[i + 1] = g * (1 - currentOpacity) + rgb[1] * currentOpacity;
-                imageData.data[i + 2] = b * (1 - currentOpacity) + rgb[2] * currentOpacity;
+                imageData.data[i]   = r * (1 - currentOpacity) + rgb[0] * currentOpacity;
+                imageData.data[i+1] = g * (1 - currentOpacity) + rgb[1] * currentOpacity;
+                imageData.data[i+2] = b * (1 - currentOpacity) + rgb[2] * currentOpacity;
             }
         }
         
@@ -1639,7 +1672,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return [data[offset], data[offset + 1], data[offset + 2], data[offset + 3]];
     }
     
-    function hexToRgb(hex) {
+    function hexToRgbToArr(hex) {
         const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
         return result ? [
             parseInt(result[1], 16),
@@ -1656,6 +1689,7 @@ document.addEventListener('DOMContentLoaded', function() {
         );
     }
     
+    // Flood fill algorithm
     function floodFill(startX, startY, targetColor, tolerance, data, width, height, maxDistance = Infinity) {
         const visited = new Set();
         const stack = [[startX, startY]];
@@ -1958,13 +1992,298 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // (Color selection popup + download functions unchanged from your code...)
-    // --- keeping as-is to avoid making this even longer ---
-
+    // Show color selection popup (same as your version, unchanged except small sizing)
+    function showColorSelectionPopup() {
+        const popup = document.createElement('div');
+        popup.className = 'modal';
+        popup.style.display = 'flex';
+        popup.style.zIndex = '10000';
+        
+        const selectedColors = new Set(Array.from(appliedColors));
+        
+        popup.innerHTML = `
+            <div class="modal-content" style="max-width: 500px; max-height: 70vh;">
+                <span class="close-modal" id="closeColorPopup">&times;</span>
+                <h2 class="modal-title">Select Colors for Image</h2>
+                <p style="margin-bottom: 15px; color: #666; font-size: 0.9rem;">Uncheck colors you don't want in the final image</p>
+                
+                <div class="color-selection-grid" id="colorSelectionGrid" style="
+                    display: grid;
+                    grid-template-columns: 1fr;
+                    gap: 10px;
+                    margin-bottom: 20px;
+                    max-height: 300px;
+                    overflow-y: auto;
+                    padding: 5px;
+                ">
+                </div>
+                
+                <div class="selected-count" style="margin-bottom: 15px; font-weight: bold; color: #2c3e50; font-size: 0.9rem;">
+                    Selected: <span id="selectedCount">${selectedColors.size}</span> colors
+                </div>
+                
+                <div class="popup-actions" style="display: flex; gap: 10px; justify-content: flex-end;">
+                    <button class="btn btn-secondary" id="cancelDownload" style="padding: 8px 16px; font-size: 0.9rem;">Cancel</button>
+                    <button class="btn btn-primary" id="confirmDownload" style="padding: 8px 16px; font-size: 0.9rem;">Download</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(popup);
+        
+        const colorGrid = document.getElementById('colorSelectionGrid');
+        const selectedCount = document.getElementById('selectedCount');
+        
+        const appliedColorsArray = Array.from(appliedColors);
+        
+        if (appliedColorsArray.length === 0) {
+            colorGrid.innerHTML = '<p style="text-align: center; color: #666; padding: 20px; font-size: 0.9rem;">No colors applied to the image yet.</p>';
+            document.getElementById('confirmDownload').disabled = true;
+        } else {
+            appliedColorsArray.forEach(color => {
+                const colorItem = document.createElement('div');
+                colorItem.className = 'color-selection-item';
+                colorItem.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    padding: 10px;
+                    border: 2px solid #3498db;
+                    border-radius: 6px;
+                    background: #f8f9fa;
+                    cursor: pointer;
+                    transition: all 0.2s ease;
+                `;
+                
+                const colorName = allColors[color] || 'Custom Color';
+                
+                colorItem.innerHTML = `
+                    <div class="color-checkbox" style="display: flex; align-items: center;">
+                        <input type="checkbox" class="color-check" data-color="${color}" checked 
+                               style="margin: 0; width: 16px; height: 16px; cursor: pointer;">
+                    </div>
+                    <div class="color-swatch-large" style="
+                        width: 30px;
+                        height: 30px;
+                        border-radius: 4px;
+                        border: 2px solid #ddd;
+                        background-color: ${color};
+                    "></div>
+                    <div class="color-details" style="flex: 1;">
+                        <div class="color-name" style="font-weight: bold; color: #2c3e50; margin-bottom: 2px; font-size: 0.9rem;">${colorName}</div>
+                        <div class="color-code" style="font-family: monospace; color: #666; font-size: 0.8rem;">${color.toUpperCase()}</div>
+                    </div>
+                    <div class="remove-color" style="
+                        color: #e74c3c;
+                        cursor: pointer;
+                        padding: 4px;
+                        border-radius: 3px;
+                        transition: background 0.2s;
+                        font-size: 0.8rem;
+                    " title="Remove this color">
+                        Remove
+                    </div>
+                `;
+                
+                colorGrid.appendChild(colorItem);
+                
+                const checkbox = colorItem.querySelector('.color-check');
+                colorItem.addEventListener('click', (e) => {
+                    if (!e.target.closest('.remove-color')) {
+                        checkbox.checked = !checkbox.checked;
+                        updateSelectedColors(checkbox, color);
+                    }
+                });
+                
+                const removeBtn = colorItem.querySelector('.remove-color');
+                removeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectedColors.delete(color);
+                    colorItem.style.display = 'none';
+                    updateSelectedCount();
+                });
+                
+                checkbox.addEventListener('change', (e) => {
+                    e.stopPropagation();
+                    updateSelectedColors(checkbox, color);
+                });
+            });
+        }
+        
+        function updateSelectedColors(checkbox, color) {
+            if (checkbox.checked) {
+                selectedColors.add(color);
+                checkbox.parentElement.parentElement.style.borderColor = '#3498db';
+                checkbox.parentElement.parentElement.style.background = '#f8f9fa';
+            } else {
+                selectedColors.delete(color);
+                checkbox.parentElement.parentElement.style.borderColor = '#e0e0e0';
+                checkbox.parentElement.parentElement.style.background = 'white';
+            }
+            updateSelectedCount();
+        }
+        
+        function updateSelectedCount() {
+            selectedCount.textContent = selectedColors.size;
+            document.getElementById('confirmDownload').disabled = selectedColors.size === 0;
+        }
+        
+        document.getElementById('closeColorPopup').addEventListener('click', () => {
+            document.body.removeChild(popup);
+        });
+        
+        document.getElementById('cancelDownload').addEventListener('click', () => {
+            document.body.removeChild(popup);
+        });
+        
+        document.getElementById('confirmDownload').addEventListener('click', () => {
+            document.body.removeChild(popup);
+            downloadImageWithSelectedColors(selectedColors);
+        });
+        
+        popup.addEventListener('click', (e) => {
+            if (e.target === popup) {
+                document.body.removeChild(popup);
+            }
+        });
+    }
+    
+    function downloadImageWithSelectedColors(selectedColorsSet) {
+        const scaleFactor = 2;
+        const outCanvas = document.createElement('canvas');
+        const footerHeight = 150 * scaleFactor;
+        outCanvas.width = houseCanvas.width * scaleFactor;
+        outCanvas.height = (houseCanvas.height * scaleFactor) + footerHeight;
+        
+        const outCtx = outCanvas.getContext('2d');
+        
+        outCtx.imageSmoothingEnabled = true;
+        outCtx.imageSmoothingQuality = 'high';
+        
+        outCtx.drawImage(
+            houseCanvas, 
+            0, 0, houseCanvas.width, houseCanvas.height,
+            0, 0, outCanvas.width, houseCanvas.height * scaleFactor
+        );
+        
+        outCtx.fillStyle = '#f8f9fa';
+        outCtx.fillRect(0, houseCanvas.height * scaleFactor, outCanvas.width, footerHeight);
+        
+        outCtx.strokeStyle = '#dee2e6';
+        outCtx.lineWidth = 1 * scaleFactor;
+        outCtx.beginPath();
+        outCtx.moveTo(0, houseCanvas.height * scaleFactor);
+        outCtx.lineTo(outCanvas.width, houseCanvas.height * scaleFactor);
+        outCtx.stroke();
+        
+        const startX = 20 * scaleFactor;
+        const yPos = (houseCanvas.height * scaleFactor) + (20 * scaleFactor);
+        const rowHeight = 35 * scaleFactor;
+        const maxColorsPerRow = 3;
+        const colorBlockWidth = (outCanvas.width - (startX * 2)) / maxColorsPerRow;
+        
+        outCtx.font = `bold ${11 * scaleFactor}px Arial, sans-serif`;
+        outCtx.fillStyle = '#495057';
+        outCtx.textAlign = 'left';
+        outCtx.fillText('Selected Colors:', startX, yPos - (10 * scaleFactor));
+        
+        let colorCount = 0;
+        let currentRow = 0;
+        
+        const selectedColorsArray = Array.from(selectedColorsSet);
+        
+        for (const color of selectedColorsArray) {
+            if (colorCount >= 6) break;
+            
+            const blockX = startX + (colorCount % maxColorsPerRow) * colorBlockWidth;
+            const blockY = yPos + (currentRow * rowHeight);
+            
+            outCtx.fillStyle = color;
+            outCtx.beginPath();
+            outCtx.arc(blockX + (15 * scaleFactor), blockY, 10 * scaleFactor, 0, Math.PI * 2);
+            outCtx.fill();
+            
+            outCtx.strokeStyle = '#dee2e6';
+            outCtx.lineWidth = 1 * scaleFactor;
+            outCtx.stroke();
+            
+            outCtx.font = `${9 * scaleFactor}px Arial, sans-serif`;
+            outCtx.fillStyle = '#495057';
+            
+            const colorName = allColors[color] || 'Custom Color';
+            const colorCode = color.toUpperCase();
+            
+            const textStartX = blockX + (30 * scaleFactor);
+            const availableWidth = colorBlockWidth - (30 * scaleFactor);
+            
+            outCtx.font = `bold ${9 * scaleFactor}px Arial, sans-serif`;
+            outCtx.fillText(colorCode, textStartX, blockY - (6 * scaleFactor));
+            
+            outCtx.font = `${8 * scaleFactor}px Arial, sans-serif`;
+            outCtx.fillStyle = '#6c757d';
+            
+            const words = colorName.split(' ');
+            let line = '';
+            let lineCount = 0;
+            const maxLines = 2;
+            
+            for (let i = 0; i < words.length; i++) {
+                const testLine = line + words[i] + ' ';
+                const metrics = outCtx.measureText(testLine);
+                const testWidth = metrics.width;
+                
+                if (testWidth > availableWidth && i > 0) {
+                    outCtx.fillText(line, textStartX, blockY + (4 * scaleFactor) + (lineCount * 10 * scaleFactor));
+                    lineCount++;
+                    
+                    if (lineCount >= maxLines) {
+                        if (i < words.length - 1) {
+                            outCtx.fillText(line + '...', textStartX, blockY + (4 * scaleFactor) + (lineCount * 10 * scaleFactor));
+                        }
+                        break;
+                    }
+                    line = words[i] + ' ';
+                } else {
+                    line = testLine;
+                }
+            }
+            
+            if (lineCount < maxLines) {
+                outCtx.fillText(line.trim(), textStartX, blockY + (4 * scaleFactor) + (lineCount * 10 * scaleFactor));
+            }
+            
+            colorCount++;
+            if ((colorCount % maxColorsPerRow) === 0) {
+                currentRow++;
+            }
+        }
+        
+        const watermarkY = (houseCanvas.height * scaleFactor) + footerHeight - (30 * scaleFactor);
+        outCtx.font = `italic ${9 * scaleFactor}px Arial, sans-serif`;
+        outCtx.fillStyle = '#6c757d';
+        outCtx.textAlign = 'center';
+        outCtx.fillText('More colors visit: https://www.apzok.com', outCanvas.width / 2, watermarkY);
+        
+        const disclaimerY = (houseCanvas.height * scaleFactor) + footerHeight - (15 * scaleFactor);
+        outCtx.font = `${8 * scaleFactor}px Arial, sans-serif`;
+        outCtx.fillStyle = '#868e96';
+        outCtx.fillText('Note: Visualizer colors may vary from actual paint and screen display', outCanvas.width / 2, disclaimerY);
+        
+        const link = document.createElement('a');
+        link.download = 'painted-house-with-colors.png';
+        
+        const dataUrl = outCanvas.toDataURL('image/png', 1.0);
+        link.href = dataUrl;
+        
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+    
     // Initialize the application
     init();
     
-    // Make paint databases globally available for color combinations
+    // Expose paint brand maps and app state globally
     window.asianPaintsColors = asianPaintsColors;
     window.bergerPaintsColors = bergerPaintsColors;
     window.opusPaintsColors = opusPaintsColors;
@@ -1974,7 +2293,6 @@ document.addEventListener('DOMContentLoaded', function() {
     window.nipponPaintsColors = nipponPaintsColors;
     window.allColors = allColors;
 
-    // Make main app functions available globally for color combinations
     window.setCurrentColor = setCurrentColor;
     window.currentColor = currentColor;
     window.currentOpacity = currentOpacity;
