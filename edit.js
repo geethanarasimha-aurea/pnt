@@ -259,8 +259,39 @@ document.addEventListener('DOMContentLoaded', function() {
         return { x: boundedX, y: boundedY };
     }
     
+    // ✅ FIXED: Add CSS to prevent touch actions on canvas during painting
+    function addMobileTouchStyles() {
+        if (!document.getElementById('mobile-touch-styles')) {
+            const styles = document.createElement('style');
+            styles.id = 'mobile-touch-styles';
+            styles.textContent = `
+                /* Prevent touch scrolling on canvas when painting */
+                .canvas-container.painting-mode {
+                    touch-action: none;
+                    -webkit-user-select: none;
+                    -webkit-touch-callout: none;
+                    -webkit-tap-highlight-color: transparent;
+                }
+                
+                /* Allow scrolling when not painting */
+                .canvas-container.scroll-mode {
+                    touch-action: pan-x pan-y;
+                    -webkit-user-select: auto;
+                }
+                
+                #houseCanvas {
+                    touch-action: none;
+                }
+            `;
+            document.head.appendChild(styles);
+        }
+    }
+    
     // Initialize the application
     function init() {
+        // Add mobile touch styles
+        addMobileTouchStyles();
+        
         // Set up color palette
         colors.forEach(color => {
             const colorOption = document.createElement('div');
@@ -373,7 +404,7 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.addEventListener('click', handleCanvasClick);
         houseCanvas.addEventListener('dblclick', handleCanvasDoubleClick);
         
-        // UPDATED: Enhanced touch events for mobile
+        // ✅ FIXED: Enhanced touch events for mobile
         houseCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         houseCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         houseCanvas.addEventListener('touchend', handleTouchEnd);
@@ -430,9 +461,14 @@ document.addEventListener('DOMContentLoaded', function() {
         toolbar.addEventListener('scroll', function() {
             this.classList.add('scrolled');
         });
+        
+        // Initialize with scroll mode
+        if (isMobileDevice()) {
+            canvasContainer.classList.add('scroll-mode');
+        }
     }
 
-    // FIXED: Enhanced Mobile Tool Handlers for Auto-Select and Lasso
+    // ✅ FIXED: Enhanced Mobile Tool Handlers for Auto-Select and Lasso
     function setupMobileToolHandlers() {
         if (!isMobileDevice()) return;
         
@@ -818,14 +854,14 @@ document.addEventListener('DOMContentLoaded', function() {
         document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
     }
     
-    // NEW: Setup mobile scroll functionality
+    // ✅ FIXED: Enhanced setup with proper touch event priority
     function setupMobileScroll() {
         // Remove existing scroll handlers if any
         canvasContainer.removeEventListener('touchstart', handleMobileScrollStart);
         canvasContainer.removeEventListener('touchmove', handleMobileScrollMove);
         canvasContainer.removeEventListener('touchend', handleMobileScrollEnd);
         
-        // Add mobile scroll handlers
+        // Add mobile scroll handlers with lower priority
         canvasContainer.addEventListener('touchstart', handleMobileScrollStart, { passive: false });
         canvasContainer.addEventListener('touchmove', handleMobileScrollMove, { passive: false });
         canvasContainer.addEventListener('touchend', handleMobileScrollEnd);
@@ -954,27 +990,43 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.addEventListener('touchstart', removeIndicators);
     }
     
-    // NEW: Handle mobile scroll start (single finger) for container dragging
+    // ✅ FIXED: Enhanced canvas container touch handling to prevent single finger scroll during painting
     function handleMobileScrollStart(e) {
+        // If currently painting with brush/eraser, prevent scrolling
+        if (isTouchPainting && (currentTool === 'brush' || currentTool === 'eraser')) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        
         // If 2 fingers → handled by two-finger scroll
         if (e.touches.length > 1) return;
         if (isTwoFingerScrolling) return;
         
-        // Don't hijack when painting on canvas – this is on container anyway
-        e.preventDefault();
-        isMobileScrolling = true;
-        
-        const touch = e.touches[0];
-        scrollStartX = touch.clientX;
-        scrollStartY = touch.clientY;
-        scrollOffsetX = canvasContainer.scrollLeft;
-        scrollOffsetY = canvasContainer.scrollTop;
-        
-        showScrollHandle(touch.clientX, touch.clientY);
-        canvasContainer.style.cursor = 'grabbing';
+        // Only allow single finger scroll for non-painting tools
+        if (currentTool !== 'brush' && currentTool !== 'eraser') {
+            e.preventDefault();
+            isMobileScrolling = true;
+            
+            const touch = e.touches[0];
+            scrollStartX = touch.clientX;
+            scrollStartY = touch.clientY;
+            scrollOffsetX = canvasContainer.scrollLeft;
+            scrollOffsetY = canvasContainer.scrollTop;
+            
+            showScrollHandle(touch.clientX, touch.clientY);
+            canvasContainer.style.cursor = 'grabbing';
+        }
     }
     
     function handleMobileScrollMove(e) {
+        // If currently painting with brush/eraser, prevent scrolling
+        if (isTouchPainting && (currentTool === 'brush' || currentTool === 'eraser')) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+        
         if (!isMobileScrolling || e.touches.length !== 1 || isTwoFingerScrolling) return;
         
         e.preventDefault();
@@ -1039,13 +1091,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // ✅ UPDATED: Enhanced Touch event handlers – single finger = paint/erase, two fingers = pan
+    // ✅ FIXED: Enhanced Touch event handlers – single finger = paint/erase ONLY, two fingers = scroll
     function handleTouchStart(e) {
         const touches = e.touches;
         
-        // Single finger for painting/erasing
+        // Single finger for painting/erasing - PREVENT SCROLLING
         if (touches.length === 1 && (currentTool === 'brush' || currentTool === 'eraser')) {
             e.preventDefault();
+            e.stopPropagation();
+            
             isTouchPainting = true;
             
             const pos = getMousePos(e);
@@ -1060,20 +1114,33 @@ document.addEventListener('DOMContentLoaded', function() {
                 cancelable: true
             });
             houseCanvas.dispatchEvent(mouseDownEvent);
+            
+            // Prevent any container scrolling when painting
+            canvasContainer.style.overflow = 'hidden';
+            canvasContainer.classList.add('painting-mode');
+            canvasContainer.classList.remove('scroll-mode');
         }
-        // Two fingers for scrolling/panning - handled by two-finger scroll
+        // Two fingers for scrolling/panning
         else if (touches.length === 2) {
             // Let two-finger scroll handle this
             return;
+        }
+        // Single finger for other tools or when not painting
+        else if (touches.length === 1) {
+            // Allow normal scrolling for single finger when not using brush/eraser
+            canvasContainer.style.overflow = 'auto';
+            canvasContainer.classList.remove('painting-mode');
+            canvasContainer.classList.add('scroll-mode');
         }
     }
     
     function handleTouchMove(e) {
         const touches = e.touches;
         
-        // Single finger painting/erasing
+        // Single finger painting/erasing - PREVENT SCROLLING
         if (isTouchPainting && touches.length === 1 && (currentTool === 'brush' || currentTool === 'eraser')) {
             e.preventDefault();
+            e.stopPropagation();
             
             const touch = touches[0];
             const mouseMoveEvent = new MouseEvent('mousemove', {
@@ -1084,7 +1151,7 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             houseCanvas.dispatchEvent(mouseMoveEvent);
         }
-        // Two fingers scrolling - handled by two-finger scroll
+        // Two fingers scrolling
         else if (touches.length === 2) {
             // Let two-finger scroll handle this
             return;
@@ -1094,7 +1161,13 @@ document.addEventListener('DOMContentLoaded', function() {
     function handleTouchEnd(e) {
         if (isTouchPainting) {
             e.preventDefault();
+            e.stopPropagation();
             isTouchPainting = false;
+            
+            // Restore scrolling capability
+            canvasContainer.style.overflow = 'auto';
+            canvasContainer.classList.remove('painting-mode');
+            canvasContainer.classList.add('scroll-mode');
             
             const mouseUpEvent = new MouseEvent('mouseup');
             houseCanvas.dispatchEvent(mouseUpEvent);
@@ -1136,6 +1209,71 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateZoomDisplay() {
         zoomLevel.textContent = `${Math.round(scale * 100)}%`;
+    }
+    
+    // ✅ FIXED: Update tool switching to reset touch states
+    function setCurrentTool(tool) {
+        currentTool = tool;
+        
+        brushTool.classList.remove('active');
+        eraserTool.classList.remove('active');
+        autoSelectTool.classList.remove('active');
+        lassoTool.classList.remove('active');
+        
+        if (tool === 'brush') {
+            brushTool.classList.add('active');
+            houseCanvas.style.cursor = 'crosshair';
+            toleranceSection.style.display = 'none';
+            selectionInfo.style.display = 'none';
+            resetLasso();
+            clearSelection();
+            
+            // Ensure scrolling is enabled when switching to brush
+            canvasContainer.style.overflow = 'auto';
+            canvasContainer.classList.remove('painting-mode');
+            canvasContainer.classList.add('scroll-mode');
+            isTouchPainting = false;
+            
+        } else if (tool === 'eraser') {
+            eraserTool.classList.add('active');
+            houseCanvas.style.cursor = 'crosshair';
+            toleranceSection.style.display = 'none';
+            selectionInfo.style.display = 'none';
+            resetLasso();
+            clearSelection();
+            
+            // Ensure scrolling is enabled when switching to eraser
+            canvasContainer.style.overflow = 'auto';
+            canvasContainer.classList.remove('painting-mode');
+            canvasContainer.classList.add('scroll-mode');
+            isTouchPainting = false;
+            
+        } else if (tool === 'autoSelect') {
+            autoSelectTool.classList.add('active');
+            houseCanvas.style.cursor = 'crosshair';
+            toleranceSection.style.display = 'block';
+            selectionInfo.style.display = 'block';
+            resetLasso();
+            
+            // Enable scrolling for auto-select
+            canvasContainer.style.overflow = 'auto';
+            canvasContainer.classList.remove('painting-mode');
+            canvasContainer.classList.add('scroll-mode');
+            isTouchPainting = false;
+            
+        } else if (tool === 'lasso') {
+            lassoTool.classList.add('active');
+            houseCanvas.style.cursor = 'crosshair';
+            toleranceSection.style.display = 'none';
+            selectionInfo.style.display = 'none';
+            clearSelection();
+            
+            // Enable scrolling for lasso
+            canvasContainer.style.overflow = 'auto';
+            canvasContainer.classList.remove('painting-mode');
+            canvasContainer.classList.add('scroll-mode');
+            isTouchPainting = false;
+        }
     }
     
     // Handle color search
@@ -1438,44 +1576,6 @@ document.addEventListener('DOMContentLoaded', function() {
         };
         
         input.click();
-    }
-    
-    // Set the current tool
-    function setCurrentTool(tool) {
-        currentTool = tool;
-        
-        brushTool.classList.remove('active');
-        eraserTool.classList.remove('active');
-        autoSelectTool.classList.remove('active');
-        lassoTool.classList.remove('active');
-        
-        if (tool === 'brush') {
-            brushTool.classList.add('active');
-            houseCanvas.style.cursor = 'crosshair';
-            toleranceSection.style.display = 'none';
-            selectionInfo.style.display = 'none';
-            resetLasso();
-            clearSelection();
-        } else if (tool === 'eraser') {
-            eraserTool.classList.add('active');
-            houseCanvas.style.cursor = 'crosshair';
-            toleranceSection.style.display = 'none';
-            selectionInfo.style.display = 'none';
-            resetLasso();
-            clearSelection();
-        } else if (tool === 'autoSelect') {
-            autoSelectTool.classList.add('active');
-            houseCanvas.style.cursor = 'crosshair';
-            toleranceSection.style.display = 'block';
-            selectionInfo.style.display = 'block';
-            resetLasso();
-        } else if (tool === 'lasso') {
-            lassoTool.classList.add('active');
-            houseCanvas.style.cursor = 'crosshair';
-            toleranceSection.style.display = 'none';
-            selectionInfo.style.display = 'none';
-            clearSelection();
-        }
     }
     
     function clearSelection() {
@@ -1941,9 +2041,17 @@ document.addEventListener('DOMContentLoaded', function() {
         return result;
     }
     
+    // ✅ FIXED: Update painting functions to manage touch modes
     function startPainting(e) {
         if (currentTool !== 'brush' && currentTool !== 'eraser') return;
         isPainting = true;
+        
+        // Add painting mode class to prevent scrolling
+        if (isMobileDevice()) {
+            canvasContainer.classList.add('painting-mode');
+            canvasContainer.classList.remove('scroll-mode');
+        }
+        
         paint(e);
     }
     
@@ -2065,6 +2173,13 @@ document.addEventListener('DOMContentLoaded', function() {
     function stopPainting() {
         if (isPainting && (currentTool === 'brush' || currentTool === 'eraser')) {
             isPainting = false;
+            
+            // Remove painting mode class to allow scrolling
+            if (isMobileDevice()) {
+                canvasContainer.classList.remove('painting-mode');
+                canvasContainer.classList.add('scroll-mode');
+            }
+            
             saveToHistory();
         }
     }
