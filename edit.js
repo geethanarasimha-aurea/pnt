@@ -98,10 +98,13 @@ document.addEventListener('DOMContentLoaded', function() {
     let isTouchPainting = false;
     let touchStartX, touchStartY;
     
-    // Mobile scroll state
-    let isMobileScrolling = false;
-    let scrollStartX, scrollStartY;
-    let scrollOffsetX = 0, scrollOffsetY = 0;
+    // Mobile scroll state - UPDATED: Only for two-finger
+    let isTwoFingerScrolling = false;
+    let twoFingerStartX = 0;
+    let twoFingerStartY = 0;
+    let twoFingerScrollStartX = 0;
+    let twoFingerScrollStartY = 0;
+    let lastTwoFingerMoveTime = 0;
     
     // Project state
     let currentProject = {
@@ -123,7 +126,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let isLassoActive = false;
     let lassoPoints = [];
     let isDrawingLasso = false;
-    let lastLassoTapTime = 0; // NEW: For double-tap detection
+    let lastLassoTapTime = 0;
     
     // Enhanced Auto-Select state
     let selectedPixels = new Set();
@@ -133,14 +136,6 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Applied colors tracking
     let appliedColors = new Set();
-    
-    // Two-finger scroll state
-    let isTwoFingerScrolling = false;
-    let twoFingerStartX = 0;
-    let twoFingerStartY = 0;
-    let twoFingerScrollStartX = 0;
-    let twoFingerScrollStartY = 0;
-    let lastTwoFingerMoveTime = 0;
     
     // Paint brand colors
     const asianPaintsColors = {
@@ -342,7 +337,7 @@ document.addEventListener('DOMContentLoaded', function() {
             setCurrentTool('lasso');
         });
         
-        // Hide move tool since we're using scroll instead
+        // Hide move tool since we're using two-finger scroll instead
         moveTool.style.display = 'none';
         
         // Upload image button
@@ -373,7 +368,7 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.addEventListener('click', handleCanvasClick);
         houseCanvas.addEventListener('dblclick', handleCanvasDoubleClick);
         
-        // Touch events for mobile - single-finger = brush/eraser, two-finger = pan
+        // UPDATED: Touch events - single finger = edit only, two finger = pan only
         houseCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         houseCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         houseCanvas.addEventListener('touchend', handleTouchEnd);
@@ -712,7 +707,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Enhanced Two-Finger Scroll Functionality for Mobile
+    // UPDATED: Two-Finger Scroll Functionality for Mobile - ONLY TWO FINGER
     function setupTwoFingerScroll() {
         if (!isMobileDevice()) return;
         
@@ -728,11 +723,11 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.addEventListener('touchstart', handleTwoFingerTouchStart, { passive: false });
     }
 
-    // ✅ UPDATED: Allow 2-finger pan for ALL tools (brush, eraser, auto-select, lasso)
+    // UPDATED: Only allow 2-finger pan, single finger is for editing
     function handleTwoFingerTouchStart(e) {
         const touches = e.touches;
         
-        // Two-finger pan anywhere on canvas container
+        // Only handle two-finger pan
         if (touches.length === 2) {
             const touch1 = touches[0];
             const touch2 = touches[1];
@@ -751,6 +746,9 @@ document.addEventListener('DOMContentLoaded', function() {
             
             e.preventDefault();
             e.stopPropagation();
+            
+            // Show two-finger scroll indicator
+            showTwoFingerScrollIndicator();
             
             // Global listeners
             document.addEventListener('touchmove', handleTwoFingerTouchMove, { passive: false });
@@ -811,32 +809,64 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!isTwoFingerScrolling) return;
         
         isTwoFingerScrolling = false;
+        hideTwoFingerScrollIndicator();
         
         document.removeEventListener('touchmove', handleTwoFingerTouchMove);
         document.removeEventListener('touchend', handleTwoFingerTouchEnd);
         document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
     }
+
+    // Two-finger scroll indicator
+    function showTwoFingerScrollIndicator() {
+        hideTwoFingerScrollIndicator();
+        
+        const indicator = document.createElement('div');
+        indicator.id = 'twoFingerScrollIndicator';
+        indicator.style.cssText = `
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(52, 152, 219, 0.9);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 10000;
+            pointer-events: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        `;
+        indicator.textContent = "👆✌️ Two-finger scrolling";
+        document.body.appendChild(indicator);
+        
+        setTimeout(() => {
+            hideTwoFingerScrollIndicator();
+        }, 2000);
+    }
+
+    function hideTwoFingerScrollIndicator() {
+        const indicator = document.getElementById('twoFingerScrollIndicator');
+        if (indicator) {
+            indicator.remove();
+        }
+    }
     
-    // NEW: Setup mobile scroll functionality
+    // UPDATED: Setup mobile scroll functionality - ONLY TWO FINGER
     function setupMobileScroll() {
         // Remove existing scroll handlers if any
         canvasContainer.removeEventListener('touchstart', handleMobileScrollStart);
         canvasContainer.removeEventListener('touchmove', handleMobileScrollMove);
         canvasContainer.removeEventListener('touchend', handleMobileScrollEnd);
         
-        // Add mobile scroll handlers
-        canvasContainer.addEventListener('touchstart', handleMobileScrollStart, { passive: false });
-        canvasContainer.addEventListener('touchmove', handleMobileScrollMove, { passive: false });
-        canvasContainer.addEventListener('touchend', handleMobileScrollEnd);
-        
-        // Setup two-finger scroll
+        // Setup two-finger scroll only
         setupTwoFingerScroll();
         
         // Update canvas container styles for mobile
         if (isMobileDevice()) {
             canvasContainer.style.overflow = 'auto';
             canvasContainer.style.webkitOverflowScrolling = 'touch';
-            canvasContainer.style.cursor = 'grab';
+            canvasContainer.style.cursor = 'default';
             
             // Force scrollbars to be always visible
             canvasContainer.style.overflowY = 'scroll';
@@ -867,13 +897,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (isScrollableX) {
             const horizontalIndicator = document.createElement('div');
             horizontalIndicator.className = 'scroll-indicator horizontal';
-            horizontalIndicator.innerHTML = '← Scroll →';
+            horizontalIndicator.innerHTML = '← Use Two Fingers →';
             horizontalIndicator.style.cssText = `
                 position: absolute;
                 bottom: 10px;
                 left: 50%;
                 transform: translateX(-50%);
-                background: rgba(0,0,0,0.7);
+                background: rgba(52, 152, 219, 0.9);
                 color: white;
                 padding: 8px 16px;
                 border-radius: 20px;
@@ -881,6 +911,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 z-index: 100;
                 pointer-events: none;
                 animation: pulse 2s infinite;
+                font-weight: bold;
             `;
             
             canvasContainer.appendChild(horizontalIndicator);
@@ -890,13 +921,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (isScrollableY) {
             const verticalIndicator = document.createElement('div');
             verticalIndicator.className = 'scroll-indicator vertical';
-            verticalIndicator.innerHTML = '↑ Scroll ↓';
+            verticalIndicator.innerHTML = '↑ Two Fingers ↓';
             verticalIndicator.style.cssText = `
                 position: absolute;
                 right: 10px;
                 top: 50%;
                 transform: translateY(-50%) rotate(-90deg);
-                background: rgba(0,0,0,0.7);
+                background: rgba(52, 152, 219, 0.9);
                 color: white;
                 padding: 8px 16px;
                 border-radius: 20px;
@@ -905,6 +936,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 pointer-events: none;
                 animation: pulse 2s infinite;
                 transform-origin: center;
+                font-weight: bold;
             `;
             
             canvasContainer.appendChild(verticalIndicator);
@@ -918,19 +950,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 @keyframes pulse {
                     0%, 100% { opacity: 0.7; }
                     50% { opacity: 1; }
-                }
-                .mobile-scroll-handle {
-                    position: absolute;
-                    background: rgba(52, 152, 219, 0.3);
-                    border: 2px solid rgba(52, 152, 219, 0.8);
-                    border-radius: 50%;
-                    z-index: 50;
-                    pointer-events: none;
-                    transition: all 0.2s ease;
-                }
-                .mobile-scroll-handle.active {
-                    background: rgba(52, 152, 219, 0.6);
-                    transform: scale(1.1);
                 }
             `;
             document.head.appendChild(styles);
@@ -953,98 +972,18 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.addEventListener('touchstart', removeIndicators);
     }
     
-    // NEW: Handle mobile scroll start (single finger) for container dragging
-    function handleMobileScrollStart(e) {
-        // If 2 fingers → handled by two-finger scroll
-        if (e.touches.length > 1) return;
-        if (isTwoFingerScrolling) return;
-        
-        // Don't hijack when painting on canvas – this is on container anyway
-        e.preventDefault();
-        isMobileScrolling = true;
-        
-        const touch = e.touches[0];
-        scrollStartX = touch.clientX;
-        scrollStartY = touch.clientY;
-        scrollOffsetX = canvasContainer.scrollLeft;
-        scrollOffsetY = canvasContainer.scrollTop;
-        
-        showScrollHandle(touch.clientX, touch.clientY);
-        canvasContainer.style.cursor = 'grabbing';
-    }
-    
-    function handleMobileScrollMove(e) {
-        if (!isMobileScrolling || e.touches.length !== 1 || isTwoFingerScrolling) return;
-        
-        e.preventDefault();
-        
-        const touch = e.touches[0];
-        const deltaX = scrollStartX - touch.clientX;
-        const deltaY = scrollStartY - touch.clientY;
-        
-        canvasContainer.scrollLeft = scrollOffsetX + deltaX;
-        canvasContainer.scrollTop = scrollOffsetY + deltaY;
-        
-        updateScrollHandle(touch.clientX, touch.clientY);
-    }
-    
-    function handleMobileScrollEnd() {
-        isMobileScrolling = false;
-        canvasContainer.style.cursor = 'grab';
-        hideScrollHandle();
-    }
-    
-    // Scroll handle helpers
-    function showScrollHandle(x, y) {
-        hideScrollHandle();
-        
-        const handle = document.createElement('div');
-        handle.className = 'mobile-scroll-handle';
-        handle.style.cssText = `
-            position: fixed;
-            left: ${x - 30}px;
-            top: ${y - 30}px;
-            width: 60px;
-            height: 60px;
-            background: rgba(52, 152, 219, 0.3);
-            border: 3px solid rgba(52, 152, 219, 0.8);
-            border-radius: 50%;
-            z-index: 1000;
-            pointer-events: none;
-            transition: all 0.2s ease;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        `;
-        
-        document.body.appendChild(handle);
-        
-        setTimeout(() => {
-            handle.style.background = 'rgba(52, 152, 219, 0.6)';
-            handle.style.transform = 'scale(1.1)';
-        }, 50);
-    }
-    
-    function updateScrollHandle(x, y) {
-        const handle = document.querySelector('.mobile-scroll-handle');
-        if (handle) {
-            handle.style.left = `${x - 30}px`;
-            handle.style.top = `${y - 30}px`;
-        }
-    }
-    
-    function hideScrollHandle() {
-        const handle = document.querySelector('.mobile-scroll-handle');
-        if (handle) {
-            handle.remove();
-        }
-    }
-    
-    // ✅ UPDATED: Touch event handlers – single finger = paint, two fingers = pan
+    // UPDATED: Touch event handlers – single finger = edit only, two fingers = pan only
     function handleTouchStart(e) {
+        // If 2 fingers → handled by two-finger scroll, ignore for editing
+        if (e.touches.length > 1) return;
+        
         // Only handle painting for brush/eraser with ONE finger
         if (currentTool !== 'brush' && currentTool !== 'eraser') return;
-        if (!e.touches || e.touches.length !== 1) return; // 2-finger → pan only
+        if (!e.touches || e.touches.length !== 1) return;
         
         e.preventDefault();
+        e.stopPropagation();
+        
         isTouchPainting = true;
         
         const pos = getMousePos(e);
@@ -1059,10 +998,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function handleTouchMove(e) {
+        // If 2 fingers → handled by two-finger scroll, ignore for editing
+        if (e.touches.length > 1) return;
+        
         if (!isTouchPainting) return;
-        if (!e.touches || e.touches.length !== 1) return; // ignore multi-touch
+        if (!e.touches || e.touches.length !== 1) return;
         
         e.preventDefault();
+        e.stopPropagation();
         
         const touch = e.touches[0];
         const mouseEvent = new MouseEvent('mousemove', {
@@ -1073,6 +1016,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function handleTouchEnd(e) {
+        // If 2 fingers → handled by two-finger scroll, ignore for editing
+        if (e.changedTouches.length > 1) return;
+        
         if (!isTouchPainting) return;
         
         e.preventDefault();
@@ -2044,7 +1990,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function stopPainting() {
-        if (isPainting && (currentTool === 'brush' || currentTool === 'eraser')) {
+        if (isPainting && (currentTool === 'brush' || currentTool !== 'eraser')) {
             isPainting = false;
             saveToHistory();
         }
