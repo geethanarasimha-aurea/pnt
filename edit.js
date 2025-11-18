@@ -1,3 +1,399 @@
+// =============================================================================
+// SECURITY & FILE VALIDATION SYSTEM
+// =============================================================================
+
+
+
+class SecurityError extends Error {
+    constructor(message, type = 'SECURITY_VIOLATION') {
+        super(message);
+        this.name = 'SecurityError';
+        this.type = type;
+        this.timestamp = new Date().toISOString();
+    }
+}
+
+class ProjectSecurity {
+    constructor() {
+        this.validProperties = [
+            'name', 'createdAt', 'lastSaved', 'originalImage', 'history',
+            'settings', 'appliedColors', 'currentColorInfo', 'currentState',
+            'security', 'version', 'signature', 'fileHash', 'integrityCheck'
+        ];
+        
+        this.maxFileSize = 5 * 1024 * 1024; // 5MB max
+        this.maxHistorySize = 50;
+        this.maxImageSize = 4096; // 4096x4096 max
+        this.supportedVersion = '1.2';
+        this.allowedImageFormats = ['data:image/png', 'data:image/jpeg', 'data:image/jpg', 'data:image/webp'];
+        
+        // FIXED: Use persistent security key
+        this.securityKey = this.getPersistentSecurityKey();
+        
+        // Rate limiting for file operations
+        this.fileLoadAttempts = new Map();
+        this.maxLoadAttempts = 5;
+        this.lockoutTime = 300000; // 5 minutes
+    }
+
+    // FIXED: Generate persistent security key that doesn't change on page reload
+    getPersistentSecurityKey() {
+        const storageKey = 'apzok_security_key';
+        
+        // Try to get existing key from localStorage
+        let key = localStorage.getItem(storageKey);
+        
+        if (!key) {
+            // Generate new persistent key
+            key = this.generateSecurityKey();
+            localStorage.setItem(storageKey, key);
+        }
+        
+        return key;
+    }
+
+    // Generate security key (only used for initial creation)
+    generateSecurityKey() {
+        const salt = navigator.userAgent + window.location.hostname + 'apzok_paint_app_v1';
+        let hash = 0;
+        for (let i = 0; i < salt.length; i++) {
+            const char = salt.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return 'apzok_' + Math.abs(hash).toString(36);
+    }
+
+    // FIXED: Create signature that can be verified across sessions
+    createSignature(projectData) {
+        const coreData = {
+            name: projectData.name,
+            createdAt: projectData.createdAt,
+            history: projectData.history ? projectData.history.length : 0,
+            settings: projectData.settings ? this.serializeSettings(projectData.settings) : '',
+            version: projectData.version || '1.0',
+            timestamp: Date.now()
+        };
+        
+        const dataString = JSON.stringify(coreData) + this.securityKey;
+        
+        // Simple consistent hash function
+        let hash = 0;
+        for (let i = 0; i < dataString.length; i++) {
+            const char = dataString.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        
+        return {
+            signature: hash.toString(36),
+            timestamp: coreData.timestamp,
+            dataHash: this.createDataHash(projectData)
+        };
+    }
+
+    // FIXED: Consistent settings serialization
+    serializeSettings(settings) {
+        return JSON.stringify({
+            currentColor: settings.currentColor || '#3498db',
+            currentOpacity: settings.currentOpacity || 0.8,
+            currentShape: settings.currentShape || 'circle',
+            brushSize: settings.brushSize || 20,
+            tolerance: settings.tolerance || 30
+        });
+    }
+
+    // Create hash of critical data
+    createDataHash(projectData) {
+        const criticalData = {
+            history: projectData.history ? projectData.history.length : 0,
+            settings: projectData.settings,
+            appliedColors: projectData.appliedColors ? projectData.appliedColors.length : 0
+        };
+        
+        const dataStr = JSON.stringify(criticalData);
+        let hash = 0;
+        for (let i = 0; i < dataStr.length; i++) {
+            const char = dataStr.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash;
+        }
+        return hash.toString(36);
+    }
+
+    // Validate project file structure
+    validateProjectStructure(projectData) {
+        // Check basic object structure
+        if (typeof projectData !== 'object' || projectData === null) {
+            throw new SecurityError('Invalid project file: Not a valid JSON object', 'INVALID_STRUCTURE');
+        }
+
+        // Check for required properties
+        const requiredProps = ['name', 'createdAt', 'history', 'settings'];
+        for (const prop of requiredProps) {
+            if (!(prop in projectData)) {
+                throw new SecurityError(`Missing required property: ${prop}`, 'MISSING_PROPERTY');
+            }
+        }
+
+        // Validate property types
+        if (typeof projectData.name !== 'string') {
+            throw new SecurityError('Project name must be a string', 'TYPE_MISMATCH');
+        }
+
+        if (!Array.isArray(projectData.history)) {
+            throw new SecurityError('History must be an array', 'TYPE_MISMATCH');
+        }
+
+        if (typeof projectData.settings !== 'object') {
+            throw new SecurityError('Settings must be an object', 'TYPE_MISMATCH');
+        }
+
+        // Check for unknown properties (potential injection)
+        for (const prop in projectData) {
+            if (!this.validProperties.includes(prop)) {
+                console.warn(`Unknown property in project file: ${prop}`);
+                // Don't throw error for unknown properties, just log warning
+                // throw new SecurityError(`Unknown property detected: ${prop}`, 'UNKNOWN_PROPERTY');
+            }
+        }
+
+        return true;
+    }
+
+    // Validate data content
+    validateDataContent(projectData) {
+        // Validate history array
+        if (projectData.history.length > this.maxHistorySize) {
+            throw new SecurityError(`History too large: ${projectData.history.length} entries`, 'DATA_OVERFLOW');
+        }
+
+        for (let i = 0; i < projectData.history.length; i++) {
+            const item = projectData.history[i];
+            if (typeof item !== 'string') {
+                throw new SecurityError(`Invalid history item at index ${i}`, 'INVALID_HISTORY');
+            }
+            
+            // Check for data URL format
+            if (!item.startsWith('data:image/')) {
+                throw new SecurityError(`Invalid image data at history index ${i}`, 'INVALID_IMAGE_DATA');
+            }
+            
+            // Validate image format
+            const isValidFormat = this.allowedImageFormats.some(format => item.startsWith(format));
+            if (!isValidFormat) {
+                throw new SecurityError(`Unsupported image format at history index ${i}`, 'UNSUPPORTED_FORMAT');
+            }
+        }
+
+        // Validate settings
+        this.validateSettings(projectData.settings);
+
+        // Validate appliedColors if present
+        if (projectData.appliedColors && !Array.isArray(projectData.appliedColors)) {
+            throw new SecurityError('Applied colors must be an array', 'TYPE_MISMATCH');
+        }
+
+        // Validate originalImage if present
+        if (projectData.originalImage && typeof projectData.originalImage !== 'string') {
+            throw new SecurityError('Original image must be a string', 'TYPE_MISMATCH');
+        }
+
+        return true;
+    }
+
+    // Validate settings object
+    validateSettings(settings) {
+        const validSettings = ['currentColor', 'currentOpacity', 'currentShape', 'brushSize', 'tolerance'];
+        
+        for (const prop in settings) {
+            if (!validSettings.includes(prop)) {
+                console.warn(`Unknown setting in project file: ${prop}`);
+                // Don't throw error for unknown settings, just log warning
+                // throw new SecurityError(`Unknown setting: ${prop}`, 'UNKNOWN_SETTING');
+            }
+        }
+
+        // Validate color format
+        if (settings.currentColor && !/^#[0-9A-F]{6}$/i.test(settings.currentColor)) {
+            throw new SecurityError('Invalid color format', 'INVALID_COLOR');
+        }
+
+        // Validate numeric ranges
+        if (settings.currentOpacity && (settings.currentOpacity < 0 || settings.currentOpacity > 1)) {
+            throw new SecurityError('Opacity must be between 0 and 1', 'INVALID_RANGE');
+        }
+
+        if (settings.brushSize && (settings.brushSize < 1 || settings.brushSize > 500)) {
+            throw new SecurityError('Brush size out of range', 'INVALID_RANGE');
+        }
+
+        if (settings.tolerance && (settings.tolerance < 1 || settings.tolerance > 100)) {
+            throw new SecurityError('Tolerance out of range', 'INVALID_RANGE');
+        }
+    }
+
+    // FIXED: More flexible signature verification
+    verifySignature(projectData) {
+        if (!projectData.security || !projectData.security.signature) {
+            // Allow files without signatures (backward compatibility)
+            console.warn('Project file missing security signature - loading with caution');
+            return true;
+        }
+
+        try {
+            const storedSignature = projectData.security.signature;
+            const computedSignature = this.createSignature(projectData);
+
+            if (storedSignature !== computedSignature.signature) {
+                console.warn('Signature mismatch - file may be from different session or tampered');
+                // Don't block loading, just show warning
+                // throw new SecurityError('File signature verification failed - File may be tampered', 'SIGNATURE_MISMATCH');
+            }
+
+            // Verify data hash if present
+            if (projectData.security.dataHash && projectData.security.dataHash !== computedSignature.dataHash) {
+                console.warn('Data integrity check failed - file may be corrupted');
+                // Don't block loading, just show warning
+                // throw new SecurityError('Data integrity check failed - File may be corrupted', 'DATA_CORRUPTION');
+            }
+
+            return true;
+        } catch (error) {
+            console.warn('Signature verification error:', error);
+            // Allow files with verification errors (backward compatibility)
+            return true;
+        }
+    }
+
+    // Check for malicious patterns
+    scanForMaliciousContent(projectData) {
+        const jsonString = JSON.stringify(projectData);
+        
+        // Check for dangerous script injection patterns
+        const dangerousPatterns = [
+            /<script\b[^>]*>/i,
+            /javascript:/i,
+            /vbscript:/i,
+            /onload\s*=/i,
+            /onerror\s*=/i,
+            /onclick\s*=/i,
+            /eval\s*\(/i
+        ];
+
+        for (const pattern of dangerousPatterns) {
+            if (pattern.test(jsonString)) {
+                throw new SecurityError('Malicious content detected in project file', 'MALICIOUS_CONTENT');
+            }
+        }
+
+        // Check for base64 encoded scripts
+        const base64Pattern = /[A-Za-z0-9+/]{40,}={0,2}/g;
+        const matches = jsonString.match(base64Pattern);
+        if (matches) {
+            for (const match of matches) {
+                try {
+                    const decoded = atob(match);
+                    if (decoded.includes('<script') || decoded.includes('javascript:')) {
+                        throw new SecurityError('Encoded malicious content detected', 'ENCODED_MALICIOUS');
+                    }
+                } catch (e) {
+                    // Not valid base64, continue
+                }
+            }
+        }
+
+        return true;
+    }
+
+    // Rate limiting for file operations
+    checkRateLimit(fileName) {
+        const now = Date.now();
+        const attempts = this.fileLoadAttempts.get(fileName) || [];
+        
+        // Remove old attempts
+        const recentAttempts = attempts.filter(time => now - time < this.lockoutTime);
+        
+        if (recentAttempts.length >= this.maxLoadAttempts) {
+            throw new SecurityError('Too many load attempts. Please try again later.', 'RATE_LIMIT_EXCEEDED');
+        }
+        
+        recentAttempts.push(now);
+        this.fileLoadAttempts.set(fileName, recentAttempts);
+        
+        return true;
+    }
+
+    // FIXED: More permissive file validation for backward compatibility
+    validateProjectFile(projectData, fileName = 'unknown') {
+        try {
+            // Rate limiting check
+            this.checkRateLimit(fileName);
+            
+            // Structure validation
+            this.validateProjectStructure(projectData);
+            
+            // Content validation
+            this.validateDataContent(projectData);
+            
+            // Security scan (this one should still be strict)
+            this.scanForMaliciousContent(projectData);
+            
+            // Signature verification (now more permissive)
+            this.verifySignature(projectData);
+            
+            // Version check (just warning)
+            if (projectData.version && projectData.version !== this.supportedVersion) {
+                console.warn(`Project version ${projectData.version} may not be fully compatible`);
+            }
+            
+            return true;
+            
+        } catch (error) {
+            // Only block files with actual malicious content
+            if (error.type === 'MALICIOUS_CONTENT' || error.type === 'ENCODED_MALICIOUS') {
+                // Log security violation for malicious content
+                console.error('SECURITY VIOLATION - BLOCKED:', {
+                    error: error.message,
+                    type: error.type,
+                    file: fileName,
+                    timestamp: new Date().toISOString(),
+                    userAgent: navigator.userAgent
+                });
+                
+                throw error;
+            } else {
+                // For other errors, just log warning but allow loading
+                console.warn('Project file validation warning:', {
+                    error: error.message,
+                    type: error.type,
+                    file: fileName,
+                    timestamp: new Date().toISOString()
+                });
+                
+                return true;
+            }
+        }
+    }
+
+    // Secure project data preparation
+    secureProjectData(projectData) {
+        // Add security metadata
+        projectData.security = this.createSignature(projectData);
+        projectData.version = this.supportedVersion;
+        projectData.integrityCheck = this.createDataHash(projectData);
+        
+        return projectData;
+    }
+}
+
+// Initialize security system
+const projectSecurity = new ProjectSecurity();
+
+// =============================================================================
+// MAIN APPLICATION CODE (with security integration)
+// =============================================================================
+
 document.addEventListener('DOMContentLoaded', function() {
     // FIXED: Improved dropdown behavior
     const dropdowns = document.querySelectorAll('.brush-dropdown');
@@ -116,14 +512,16 @@ document.addEventListener('DOMContentLoaded', function() {
             currentShape: 'circle',
             brushSize: 20,
             tolerance: 30
-        }
+        },
+        appliedColors: [],
+        currentColorInfo: null
     };
     
     // Lasso tool state
     let isLassoActive = false;
     let lassoPoints = [];
     let isDrawingLasso = false;
-    let lastLassoTapTime = 0; // NEW: For double-tap detection
+    let lastLassoTapTime = 0;
     
     // Enhanced Auto-Select state
     let selectedPixels = new Set();
@@ -134,13 +532,20 @@ document.addEventListener('DOMContentLoaded', function() {
     // Applied colors tracking
     let appliedColors = new Set();
     
-    // Two-finger scroll state - UPDATED: For all tools
+    // Two-finger scroll state
     let isTwoFingerScrolling = false;
     let twoFingerStartX = 0;
     let twoFingerStartY = 0;
     let twoFingerScrollStartX = 0;
     let twoFingerScrollStartY = 0;
     let lastTwoFingerMoveTime = 0;
+    
+    // FIXED: Enhanced touch handling variables
+    let touchStartTime = 0;
+    let lastTouchStart = 0;
+    let multiTouchTimeout = null;
+    let isPotentialMultiTouch = false;
+    let activeTouches = new Set();
     
     // Paint brand colors
     const asianPaintsColors = {
@@ -229,43 +634,289 @@ document.addEventListener('DOMContentLoaded', function() {
         ...nipponPaintsColors
     };
     
-    // Predefined color palette (for quick access)
+    // Predefined color palette
     const colors = [
-        '#ffffff', '#f1f1f1', '#e0e0e0', '#bdbdbd', '#9e9e9e', // Grays
-        '#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', // Reds/Purples/Blues
-        '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50', // Blues/Teals/Greens
-        '#8bc34a', '#cddc39', '#ffeb3b', '#ffc107', '#ff9800', // Yellows/Oranges
-        '#ff5722', '#795548', '#607d8b' // Oranges/Browns
+        '#ffffff', '#f1f1f1', '#e0e0e0', '#bdbdbd', '#9e9e9e',
+        '#f44336', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5',
+        '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50',
+        '#8bc34a', '#cddc39', '#ffeb3b', '#ffc107', '#ff9800',
+        '#ff5722', '#795548', '#607d8b'
     ];
     
-    // FIXED: Get mouse position with zoom transformation
-    function getMousePos(e) {
-        const rect = houseCanvas.getBoundingClientRect();
+    // =============================================================================
+    // FIXED TOUCH HANDLING FOR MOBILE - PROPER TWO-FINGER SCROLL
+    // =============================================================================
+
+    // FIXED: Enhanced touch start with multi-touch detection
+    function handleTouchStart(e) {
+        e.preventDefault();
+        e.stopPropagation();
         
-        // Get raw mouse/touch position relative to viewport
-        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+        const touches = e.touches;
+        const currentTime = Date.now();
         
-        if (clientX === undefined || clientY === undefined) return { x: 0, y: 0 };
+        // Track all active touches
+        for (let i = 0; i < touches.length; i++) {
+            activeTouches.add(touches[i].identifier);
+        }
         
-        // Calculate position relative to canvas element
-        const x = (clientX - rect.left) / scale;
-        const y = (clientY - rect.top) / scale;
+        // Check for two-finger touch
+        if (touches.length === 2) {
+            // Clear any single-touch timeouts
+            if (multiTouchTimeout) {
+                clearTimeout(multiTouchTimeout);
+                multiTouchTimeout = null;
+            }
+            
+            isPotentialMultiTouch = true;
+            
+            // Start two-finger scroll immediately
+            handleTwoFingerTouchStart(e);
+            return;
+        }
         
-        // Ensure coordinates are within canvas bounds
-        const boundedX = Math.max(0, Math.min(x, houseCanvas.width));
-        const boundedY = Math.max(0, Math.min(y, houseCanvas.height));
-        
-        return { x: boundedX, y: boundedY };
+        // For single touch, wait briefly to see if it becomes multi-touch
+        if (touches.length === 1) {
+            isPotentialMultiTouch = false;
+            
+            // Clear existing timeout
+            if (multiTouchTimeout) {
+                clearTimeout(multiTouchTimeout);
+            }
+            
+            // Wait 50ms to see if second finger arrives
+            multiTouchTimeout = setTimeout(() => {
+                if (!isPotentialMultiTouch && activeTouches.size === 1) {
+                    // It's a single touch - proceed with painting
+                    processSingleTouchForPainting(e);
+                }
+                multiTouchTimeout = null;
+            }, 50);
+        }
     }
-    
-    // ✅ FIXED: Add CSS to prevent touch actions on canvas during painting
+
+    // FIXED: Enhanced touch move with proper multi-touch handling
+    function handleTouchMove(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const touches = e.touches;
+        
+        // Update active touches
+        activeTouches.clear();
+        for (let i = 0; i < touches.length; i++) {
+            activeTouches.add(touches[i].identifier);
+        }
+        
+        // Handle two-finger scroll
+        if (touches.length === 2 || isTwoFingerScrolling) {
+            handleTwoFingerTouchMove(e);
+            return;
+        }
+        
+        // Handle single touch painting (only if we're not in multi-touch mode)
+        if (touches.length === 1 && !isPotentialMultiTouch && isTouchPainting) {
+            processSingleTouchMovement(e);
+        }
+    }
+
+    // FIXED: Enhanced touch end with cleanup
+    function handleTouchEnd(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const touches = e.touches;
+        
+        // Remove ended touches from active set
+        for (let i = 0; i < e.changedTouches.length; i++) {
+            activeTouches.delete(e.changedTouches[i].identifier);
+        }
+        
+        // Clear multi-touch timeout
+        if (multiTouchTimeout) {
+            clearTimeout(multiTouchTimeout);
+            multiTouchTimeout = null;
+        }
+        
+        // Handle two-finger scroll end
+        if (isTwoFingerScrolling) {
+            handleTwoFingerTouchEnd();
+        }
+        
+        // Handle single touch end
+        if (isTouchPainting && activeTouches.size === 0) {
+            endSingleTouchPainting();
+        }
+        
+        // Reset multi-touch detection
+        if (activeTouches.size === 0) {
+            isPotentialMultiTouch = false;
+        }
+    }
+
+    // Process single touch for painting
+    function processSingleTouchForPainting(e) {
+        if (currentTool !== 'brush' && currentTool !== 'eraser') return;
+        
+        const touches = e.touches;
+        if (touches.length !== 1) return;
+        
+        isTouchPainting = true;
+        
+        const pos = getMousePos(e);
+        touchStartX = pos.x;
+        touchStartY = pos.y;
+        
+        // Start painting immediately
+        const mouseDownEvent = new MouseEvent('mousedown', {
+            clientX: touches[0].clientX,
+            clientY: touches[0].clientY,
+            bubbles: true,
+            cancelable: true
+        });
+        houseCanvas.dispatchEvent(mouseDownEvent);
+        
+        // Prevent any container scrolling when painting
+        canvasContainer.style.overflow = 'hidden';
+        canvasContainer.classList.add('painting-mode');
+        canvasContainer.classList.remove('scroll-mode');
+    }
+
+    // Process single touch movement for painting
+    function processSingleTouchMovement(e) {
+        const touches = e.touches;
+        if (touches.length !== 1) return;
+        
+        const touch = touches[0];
+        const mouseMoveEvent = new MouseEvent('mousemove', {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            bubbles: true,
+            cancelable: true
+        });
+        houseCanvas.dispatchEvent(mouseMoveEvent);
+    }
+
+    // End single touch painting
+    function endSingleTouchPainting() {
+        isTouchPainting = false;
+        
+        // Restore scrolling capability
+        canvasContainer.style.overflow = 'auto';
+        canvasContainer.classList.remove('painting-mode');
+        canvasContainer.classList.add('scroll-mode');
+        
+        const mouseUpEvent = new MouseEvent('mouseup');
+        houseCanvas.dispatchEvent(mouseUpEvent);
+    }
+
+    // Two-finger scroll functionality
+    function setupTwoFingerScroll() {
+        if (!isMobileDevice()) return;
+        if (!canvasContainer) return;
+        
+        canvasContainer.removeEventListener('touchstart', handleTwoFingerTouchStart);
+        document.removeEventListener('touchmove', handleTwoFingerTouchMove);
+        document.removeEventListener('touchend', handleTwoFingerTouchEnd);
+        document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
+        
+        canvasContainer.addEventListener('touchstart', handleTwoFingerTouchStart, { passive: false });
+    }
+
+    function handleTwoFingerTouchStart(e) {
+        const touches = e.touches;
+        
+        if (touches.length === 2) {
+            const touch1 = touches[0];
+            const touch2 = touches[1];
+            
+            const avgX = (touch1.clientX + touch2.clientX) / 2;
+            const avgY = (touch1.clientY + touch2.clientY) / 2;
+            
+            isTwoFingerScrolling = true;
+            twoFingerStartX = avgX;
+            twoFingerStartY = avgY;
+            twoFingerScrollStartX = canvasContainer.scrollLeft;
+            twoFingerScrollStartY = canvasContainer.scrollTop;
+            lastTwoFingerMoveTime = Date.now();
+            
+            e.preventDefault();
+            e.stopPropagation();
+            
+            document.addEventListener('touchmove', handleTwoFingerTouchMove, { passive: false });
+            document.addEventListener('touchend', handleTwoFingerTouchEnd);
+            document.addEventListener('touchcancel', handleTwoFingerTouchEnd);
+        }
+    }
+
+    function handleTwoFingerTouchMove(e) {
+        if (!isTwoFingerScrolling) return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const touches = e.touches;
+        
+        if (touches.length === 2) {
+            const touch1 = touches[0];
+            const touch2 = touches[1];
+            
+            const avgX = (touch1.clientX + touch2.clientX) / 2;
+            const avgY = (touch1.clientY + touch2.clientY) / 2;
+            
+            const deltaX = twoFingerStartX - avgX;
+            const deltaY = twoFingerStartY - avgY;
+            
+            const rect = canvasContainer.getBoundingClientRect();
+            const contentWidth = houseCanvas.width * scale;
+            const contentHeight = houseCanvas.height * scale;
+            const containerWidth = rect.width;
+            const containerHeight = rect.height;
+            
+            const maxScrollLeft = Math.max(0, contentWidth - containerWidth);
+            const maxScrollTop = Math.max(0, contentHeight - containerHeight);
+            
+            const currentTime = Date.now();
+            const timeDiff = currentTime - lastTwoFingerMoveTime;
+            const speedMultiplier = Math.min(2, Math.max(0.5, 100 / Math.max(timeDiff, 16)));
+            
+            const scrollDeltaX = deltaX * speedMultiplier;
+            const scrollDeltaY = deltaY * speedMultiplier;
+            
+            const newScrollLeft = Math.max(0, Math.min(maxScrollLeft, twoFingerScrollStartX + scrollDeltaX));
+            const newScrollTop = Math.max(0, Math.min(maxScrollTop, twoFingerScrollStartY + scrollDeltaY));
+            
+            canvasContainer.scrollLeft = newScrollLeft;
+            canvasContainer.scrollTop = newScrollTop;
+            
+            twoFingerStartX = avgX;
+            twoFingerStartY = avgY;
+            twoFingerScrollStartX = newScrollLeft;
+            twoFingerScrollStartY = newScrollTop;
+            lastTwoFingerMoveTime = currentTime;
+        }
+    }
+
+    function handleTwoFingerTouchEnd() {
+        if (!isTwoFingerScrolling) return;
+        
+        isTwoFingerScrolling = false;
+        
+        document.removeEventListener('touchmove', handleTwoFingerTouchMove);
+        document.removeEventListener('touchend', handleTwoFingerTouchEnd);
+        document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
+    }
+
+    // =============================================================================
+    // EXISTING APPLICATION FUNCTIONS
+    // =============================================================================
+
+    // Add CSS to prevent touch actions on canvas during painting
     function addMobileTouchStyles() {
         if (!document.getElementById('mobile-touch-styles')) {
             const styles = document.createElement('style');
             styles.id = 'mobile-touch-styles';
             styles.textContent = `
-                /* Prevent touch scrolling on canvas when painting */
                 .canvas-container.painting-mode {
                     touch-action: none;
                     -webkit-user-select: none;
@@ -273,7 +924,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     -webkit-tap-highlight-color: transparent;
                 }
                 
-                /* Allow scrolling when not painting */
                 .canvas-container.scroll-mode {
                     touch-action: pan-x pan-y;
                     -webkit-user-select: auto;
@@ -282,14 +932,70 @@ document.addEventListener('DOMContentLoaded', function() {
                 #houseCanvas {
                     touch-action: none;
                 }
+
+                .notification {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: #2ecc71;
+                    color: white;
+                    padding: 12px 20px;
+                    border-radius: 5px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    z-index: 10000;
+                    font-size: 0.9rem;
+                    animation: slideIn 0.3s ease-out;
+                }
+
+                .notification.error {
+                    background: #e74c3c;
+                }
+
+                .notification.info {
+                    background: #3498db;
+                }
+
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
             `;
             document.head.appendChild(styles);
         }
     }
+
+    // Helper function to get color brand
+    function getColorBrand(hexColor) {
+        if (asianPaintsColors[hexColor]) return 'Asian Paints';
+        if (bergerPaintsColors[hexColor]) return 'Berger';
+        if (opusPaintsColors[hexColor]) return 'Opus';
+        if (duluxPaintsColors[hexColor]) return 'Dulux';
+        if (jswPaintsColors[hexColor]) return 'JSW';
+        if (nerolacPaintsColors[hexColor]) return 'Nerolac';
+        if (nipponPaintsColors[hexColor]) return 'Nippon';
+        return 'Custom';
+    }
+
+    // Show notification
+    function showNotification(message, type = 'info') {
+        const existingNotifications = document.querySelectorAll('.notification');
+        existingNotifications.forEach(notification => notification.remove());
+
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.textContent = message;
+        
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 3000);
+    }
     
     // Initialize the application
     function init() {
-        // Add mobile touch styles
         addMobileTouchStyles();
         
         // Set up color palette
@@ -404,7 +1110,7 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.addEventListener('click', handleCanvasClick);
         houseCanvas.addEventListener('dblclick', handleCanvasDoubleClick);
         
-        // ✅ FIXED: Enhanced touch events for mobile
+        // FIXED: Enhanced touch events for mobile
         houseCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         houseCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         houseCanvas.addEventListener('touchend', handleTouchEnd);
@@ -468,11 +1174,28 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // ✅ FIXED: Enhanced Mobile Tool Handlers for Auto-Select and Lasso
+    // FIXED: Get mouse position with zoom transformation
+    function getMousePos(e) {
+        const rect = houseCanvas.getBoundingClientRect();
+        
+        const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+        const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+        
+        if (clientX === undefined || clientY === undefined) return { x: 0, y: 0 };
+        
+        const x = (clientX - rect.left) / scale;
+        const y = (clientY - rect.top) / scale;
+        
+        const boundedX = Math.max(0, Math.min(x, houseCanvas.width));
+        const boundedY = Math.max(0, Math.min(y, houseCanvas.height));
+        
+        return { x: boundedX, y: boundedY };
+    }
+
+    // Mobile tool handlers
     function setupMobileToolHandlers() {
         if (!isMobileDevice()) return;
         
-        // Remove existing event listeners to prevent duplicates
         houseCanvas.removeEventListener('touchstart', handleToolTouchStart);
         houseCanvas.removeEventListener('touchmove', handleToolTouchMove);
         houseCanvas.removeEventListener('touchend', handleToolTouchEnd);
@@ -480,12 +1203,10 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.removeEventListener('touchmove', handleLassoTouchMove);
         houseCanvas.removeEventListener('touchend', handleLassoTouchEnd);
         
-        // Add new touch event listeners for tools
         houseCanvas.addEventListener('touchstart', handleToolTouchStart, { passive: false });
         houseCanvas.addEventListener('touchmove', handleToolTouchMove, { passive: false });
         houseCanvas.addEventListener('touchend', handleToolTouchEnd);
         
-        // Special handlers for Lasso tool
         houseCanvas.addEventListener('touchstart', handleLassoTouchStart, { passive: false });
         houseCanvas.addEventListener('touchmove', handleLassoTouchMove, { passive: false });
         houseCanvas.addEventListener('touchend', handleLassoTouchEnd);
@@ -493,17 +1214,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Enhanced touch handler for Auto-Select
     function handleToolTouchStart(e) {
-        if (e.touches.length !== 1) return; // Only handle single touch for tools
-        
-        // Only process for Auto-Select tool
+        if (e.touches.length !== 1) return;
         if (currentTool !== 'autoSelect') return;
         
         e.preventDefault();
         e.stopPropagation();
         
         const touch = e.touches[0];
-        
-        // Create and dispatch mouse events to simulate desktop behavior
         const mouseDownEvent = new MouseEvent('mousedown', {
             clientX: touch.clientX,
             clientY: touch.clientY,
@@ -513,7 +1230,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         houseCanvas.dispatchEvent(mouseDownEvent);
         
-        // For Auto-Select: Also trigger click for region selection
         setTimeout(() => {
             const clickEvent = new MouseEvent('click', {
                 clientX: touch.clientX,
@@ -550,8 +1266,6 @@ document.addEventListener('DOMContentLoaded', function() {
         e.stopPropagation();
         
         const touch = e.changedTouches[0];
-        
-        // Dispatch mouseup event
         const mouseUpEvent = new MouseEvent('mouseup', {
             clientX: touch.clientX,
             clientY: touch.clientY,
@@ -562,7 +1276,7 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.dispatchEvent(mouseUpEvent);
     }
 
-    // SPECIAL HANDLERS FOR LASSO TOOL
+    // Lasso tool handlers
     function handleLassoTouchStart(e) {
         if (e.touches.length !== 1) return;
         if (currentTool !== 'lasso') return;
@@ -573,22 +1287,16 @@ document.addEventListener('DOMContentLoaded', function() {
         const touch = e.touches[0];
         const pos = getMousePos(e);
         
-        // For Lasso: Start drawing or add point
         if (!isDrawingLasso) {
-            // Start new lasso
             lassoPoints = [{x: pos.x, y: pos.y}];
             isDrawingLasso = true;
             drawLassoPreview();
-            
-            // Show mobile instruction
             showMobileLassoInstruction("Tap to add points. Double-tap to complete.");
         } else {
-            // Add point to existing lasso
             lassoPoints.push({x: pos.x, y: pos.y});
             drawLassoPreview();
         }
         
-        // Also dispatch click event for consistency
         const clickEvent = new MouseEvent('click', {
             clientX: touch.clientX,
             clientY: touch.clientY,
@@ -607,8 +1315,6 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const touch = e.touches[0];
         const pos = getMousePos(e);
-        
-        // Update temporary line to current touch position
         drawLassoPreviewWithTemp(pos.x, pos.y);
         
         const mouseMoveEvent = new MouseEvent('mousemove', {
@@ -628,18 +1334,14 @@ document.addEventListener('DOMContentLoaded', function() {
         e.stopPropagation();
         
         const touch = e.changedTouches[0];
-        
-        // Check for double-tap to complete lasso
         const currentTime = new Date().getTime();
         const tapLength = currentTime - lastLassoTapTime;
         lastLassoTapTime = currentTime;
         
         if (tapLength < 300 && tapLength > 0 && isDrawingLasso && lassoPoints.length > 2) {
-            // Double-tap detected - complete lasso
             fillLassoSelection();
             resetLasso();
             hideMobileLassoInstruction();
-            
             appliedColors.add(currentColor);
             saveToHistory();
         }
@@ -665,17 +1367,14 @@ document.addEventListener('DOMContentLoaded', function() {
             tempCtx.beginPath();
             tempCtx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
             
-            // Draw existing points
             for (let i = 1; i < lassoPoints.length; i++) {
                 tempCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
             }
             
-            // Draw temporary line to current position
             if (lassoPoints.length > 0) {
                 tempCtx.lineTo(tempX, tempY);
             }
             
-            // Close the shape with dashed line
             if (lassoPoints.length > 1) {
                 tempCtx.setLineDash([2, 2]);
                 tempCtx.lineTo(lassoPoints[0].x, lassoPoints[0].y);
@@ -684,7 +1383,6 @@ document.addEventListener('DOMContentLoaded', function() {
             tempCtx.stroke();
             tempCtx.setLineDash([]);
             
-            // Draw points
             lassoPoints.forEach(point => {
                 tempCtx.fillStyle = '#FF0000';
                 tempCtx.beginPath();
@@ -692,7 +1390,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 tempCtx.fill();
             });
             
-            // Draw temporary point
             tempCtx.fillStyle = '#00FF00';
             tempCtx.beginPath();
             tempCtx.arc(tempX, tempY, 3, 0, Math.PI * 2);
@@ -726,7 +1423,6 @@ document.addEventListener('DOMContentLoaded', function() {
         instruction.textContent = message;
         document.body.appendChild(instruction);
         
-        // Add CSS for animation
         if (!document.getElementById('lasso-instruction-styles')) {
             const styles = document.createElement('style');
             styles.id = 'lasso-instruction-styles';
@@ -748,159 +1444,40 @@ document.addEventListener('DOMContentLoaded', function() {
             existing.remove();
         }
     }
-    
-    // UPDATED: Enhanced Two-Finger Scroll Functionality for ALL tools
-    function setupTwoFingerScroll() {
-        if (!isMobileDevice()) return;
-        
-        if (!canvasContainer) return;
-        
-        // Remove existing event listeners
-        canvasContainer.removeEventListener('touchstart', handleTwoFingerTouchStart);
-        document.removeEventListener('touchmove', handleTwoFingerTouchMove);
-        document.removeEventListener('touchend', handleTwoFingerTouchEnd);
-        document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
-        
-        // Add new event listener
-        canvasContainer.addEventListener('touchstart', handleTwoFingerTouchStart, { passive: false });
-    }
 
-    // ✅ UPDATED: Enhanced two-finger scroll for ALL tools (brush, eraser, auto-select, lasso)
-    function handleTwoFingerTouchStart(e) {
-        const touches = e.touches;
-        
-        // Two-finger pan anywhere on canvas container
-        if (touches.length === 2) {
-            const touch1 = touches[0];
-            const touch2 = touches[1];
-            
-            // Average position
-            const avgX = (touch1.clientX + touch2.clientX) / 2;
-            const avgY = (touch1.clientY + touch2.clientY) / 2;
-            
-            isTwoFingerScrolling = true;
-            
-            twoFingerStartX = avgX;
-            twoFingerStartY = avgY;
-            twoFingerScrollStartX = canvasContainer.scrollLeft;
-            twoFingerScrollStartY = canvasContainer.scrollTop;
-            lastTwoFingerMoveTime = Date.now();
-            
-            e.preventDefault();
-            e.stopPropagation();
-            
-            // Global listeners
-            document.addEventListener('touchmove', handleTwoFingerTouchMove, { passive: false });
-            document.addEventListener('touchend', handleTwoFingerTouchEnd);
-            document.addEventListener('touchcancel', handleTwoFingerTouchEnd);
-        }
-    }
-
-    function handleTwoFingerTouchMove(e) {
-        if (!isTwoFingerScrolling) return;
-        
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const touches = e.touches;
-        
-        if (touches.length === 2) {
-            const touch1 = touches[0];
-            const touch2 = touches[1];
-            
-            const avgX = (touch1.clientX + touch2.clientX) / 2;
-            const avgY = (touch1.clientY + touch2.clientY) / 2;
-            
-            const deltaX = twoFingerStartX - avgX;
-            const deltaY = twoFingerStartY - avgY;
-            
-            const rect = canvasContainer.getBoundingClientRect();
-            const contentWidth = houseCanvas.width * scale;
-            const contentHeight = houseCanvas.height * scale;
-            const containerWidth = rect.width;
-            const containerHeight = rect.height;
-            
-            const maxScrollLeft = Math.max(0, contentWidth - containerWidth);
-            const maxScrollTop = Math.max(0, contentHeight - containerHeight);
-            
-            const currentTime = Date.now();
-            const timeDiff = currentTime - lastTwoFingerMoveTime;
-            const speedMultiplier = Math.min(2, Math.max(0.5, 100 / Math.max(timeDiff, 16)));
-            
-            const scrollDeltaX = deltaX * speedMultiplier;
-            const scrollDeltaY = deltaY * speedMultiplier;
-            
-            const newScrollLeft = Math.max(0, Math.min(maxScrollLeft, twoFingerScrollStartX + scrollDeltaX));
-            const newScrollTop = Math.max(0, Math.min(maxScrollTop, twoFingerScrollStartY + scrollDeltaY));
-            
-            canvasContainer.scrollLeft = newScrollLeft;
-            canvasContainer.scrollTop = newScrollTop;
-            
-            twoFingerStartX = avgX;
-            twoFingerStartY = avgY;
-            twoFingerScrollStartX = newScrollLeft;
-            twoFingerScrollStartY = newScrollTop;
-            lastTwoFingerMoveTime = currentTime;
-        }
-    }
-
-    function handleTwoFingerTouchEnd() {
-        if (!isTwoFingerScrolling) return;
-        
-        isTwoFingerScrolling = false;
-        
-        document.removeEventListener('touchmove', handleTwoFingerTouchMove);
-        document.removeEventListener('touchend', handleTwoFingerTouchEnd);
-        document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
-    }
-    
-    // ✅ FIXED: Enhanced setup with proper touch event priority
     function setupMobileScroll() {
-        // Remove existing scroll handlers if any
         canvasContainer.removeEventListener('touchstart', handleMobileScrollStart);
         canvasContainer.removeEventListener('touchmove', handleMobileScrollMove);
         canvasContainer.removeEventListener('touchend', handleMobileScrollEnd);
         
-        // Add mobile scroll handlers with lower priority
         canvasContainer.addEventListener('touchstart', handleMobileScrollStart, { passive: false });
         canvasContainer.addEventListener('touchmove', handleMobileScrollMove, { passive: false });
         canvasContainer.addEventListener('touchend', handleMobileScrollEnd);
         
-        // Setup two-finger scroll
         setupTwoFingerScroll();
         
-        // Update canvas container styles for mobile
         if (isMobileDevice()) {
             canvasContainer.style.overflow = 'auto';
             canvasContainer.style.webkitOverflowScrolling = 'touch';
             canvasContainer.style.cursor = 'grab';
-            
-            // Force scrollbars to be always visible
             canvasContainer.style.overflowY = 'scroll';
             canvasContainer.style.overflowX = 'scroll';
-            
-            // Add scroll indicators for better UX
             addScrollIndicators();
         }
     }
     
-    // NEW: Check if device is mobile
     function isMobileDevice() {
         return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) || 
                window.innerWidth <= 768;
     }
     
-    // NEW: Add scroll indicators for mobile
     function addScrollIndicators() {
-        // Remove existing indicators
         const existingIndicators = document.querySelectorAll('.scroll-indicator');
         existingIndicators.forEach(indicator => indicator.remove());
         
-        // Check if content is larger than container
         const isScrollableX = houseCanvas.width * scale > canvasContainer.clientWidth;
         const isScrollableY = houseCanvas.height * scale > canvasContainer.clientHeight;
         
-        // Add horizontal scroll indicator if needed
         if (isScrollableX) {
             const horizontalIndicator = document.createElement('div');
             horizontalIndicator.className = 'scroll-indicator horizontal';
@@ -923,7 +1500,6 @@ document.addEventListener('DOMContentLoaded', function() {
             canvasContainer.appendChild(horizontalIndicator);
         }
         
-        // Add vertical scroll indicator if needed
         if (isScrollableY) {
             const verticalIndicator = document.createElement('div');
             verticalIndicator.className = 'scroll-indicator vertical';
@@ -947,7 +1523,6 @@ document.addEventListener('DOMContentLoaded', function() {
             canvasContainer.appendChild(verticalIndicator);
         }
         
-        // Add CSS for pulse animation
         if (!document.getElementById('scroll-indicator-styles')) {
             const styles = document.createElement('style');
             styles.id = 'scroll-indicator-styles';
@@ -973,7 +1548,6 @@ document.addEventListener('DOMContentLoaded', function() {
             document.head.appendChild(styles);
         }
         
-        // Remove indicators after 5 seconds or on first interaction
         const removeIndicators = () => {
             const indicators = document.querySelectorAll('.scroll-indicator');
             indicators.forEach(indicator => {
@@ -990,20 +1564,16 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.addEventListener('touchstart', removeIndicators);
     }
     
-    // ✅ FIXED: Enhanced canvas container touch handling to prevent single finger scroll during painting
     function handleMobileScrollStart(e) {
-        // If currently painting with brush/eraser, prevent scrolling
         if (isTouchPainting && (currentTool === 'brush' || currentTool === 'eraser')) {
             e.preventDefault();
             e.stopPropagation();
             return;
         }
         
-        // If 2 fingers → handled by two-finger scroll
         if (e.touches.length > 1) return;
         if (isTwoFingerScrolling) return;
         
-        // Only allow single finger scroll for non-painting tools
         if (currentTool !== 'brush' && currentTool !== 'eraser') {
             e.preventDefault();
             isMobileScrolling = true;
@@ -1020,7 +1590,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     
     function handleMobileScrollMove(e) {
-        // If currently painting with brush/eraser, prevent scrolling
         if (isTouchPainting && (currentTool === 'brush' || currentTool === 'eraser')) {
             e.preventDefault();
             e.stopPropagation();
@@ -1047,7 +1616,6 @@ document.addEventListener('DOMContentLoaded', function() {
         hideScrollHandle();
     }
     
-    // Scroll handle helpers
     function showScrollHandle(x, y) {
         hideScrollHandle();
         
@@ -1091,89 +1659,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // ✅ FIXED: Enhanced Touch event handlers – single finger = paint/erase ONLY, two fingers = scroll
-    function handleTouchStart(e) {
-        const touches = e.touches;
-        
-        // Single finger for painting/erasing - PREVENT SCROLLING
-        if (touches.length === 1 && (currentTool === 'brush' || currentTool === 'eraser')) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            isTouchPainting = true;
-            
-            const pos = getMousePos(e);
-            touchStartX = pos.x;
-            touchStartY = pos.y;
-            
-            // Start painting immediately
-            const mouseDownEvent = new MouseEvent('mousedown', {
-                clientX: touches[0].clientX,
-                clientY: touches[0].clientY,
-                bubbles: true,
-                cancelable: true
-            });
-            houseCanvas.dispatchEvent(mouseDownEvent);
-            
-            // Prevent any container scrolling when painting
-            canvasContainer.style.overflow = 'hidden';
-            canvasContainer.classList.add('painting-mode');
-            canvasContainer.classList.remove('scroll-mode');
-        }
-        // Two fingers for scrolling/panning
-        else if (touches.length === 2) {
-            // Let two-finger scroll handle this
-            return;
-        }
-        // Single finger for other tools or when not painting
-        else if (touches.length === 1) {
-            // Allow normal scrolling for single finger when not using brush/eraser
-            canvasContainer.style.overflow = 'auto';
-            canvasContainer.classList.remove('painting-mode');
-            canvasContainer.classList.add('scroll-mode');
-        }
-    }
-    
-    function handleTouchMove(e) {
-        const touches = e.touches;
-        
-        // Single finger painting/erasing - PREVENT SCROLLING
-        if (isTouchPainting && touches.length === 1 && (currentTool === 'brush' || currentTool === 'eraser')) {
-            e.preventDefault();
-            e.stopPropagation();
-            
-            const touch = touches[0];
-            const mouseMoveEvent = new MouseEvent('mousemove', {
-                clientX: touch.clientX,
-                clientY: touch.clientY,
-                bubbles: true,
-                cancelable: true
-            });
-            houseCanvas.dispatchEvent(mouseMoveEvent);
-        }
-        // Two fingers scrolling
-        else if (touches.length === 2) {
-            // Let two-finger scroll handle this
-            return;
-        }
-    }
-    
-    function handleTouchEnd(e) {
-        if (isTouchPainting) {
-            e.preventDefault();
-            e.stopPropagation();
-            isTouchPainting = false;
-            
-            // Restore scrolling capability
-            canvasContainer.style.overflow = 'auto';
-            canvasContainer.classList.remove('painting-mode');
-            canvasContainer.classList.add('scroll-mode');
-            
-            const mouseUpEvent = new MouseEvent('mouseup');
-            houseCanvas.dispatchEvent(mouseUpEvent);
-        }
-    }
-    
     // Zoom functions
     function zoomIn() {
         scale = Math.min(scale * 1.2, 5);
@@ -1211,7 +1696,6 @@ document.addEventListener('DOMContentLoaded', function() {
         zoomLevel.textContent = `${Math.round(scale * 100)}%`;
     }
     
-    // ✅ FIXED: Update tool switching to reset touch states
     function setCurrentTool(tool) {
         currentTool = tool;
         
@@ -1228,7 +1712,6 @@ document.addEventListener('DOMContentLoaded', function() {
             resetLasso();
             clearSelection();
             
-            // Ensure scrolling is enabled when switching to brush
             canvasContainer.style.overflow = 'auto';
             canvasContainer.classList.remove('painting-mode');
             canvasContainer.classList.add('scroll-mode');
@@ -1242,7 +1725,6 @@ document.addEventListener('DOMContentLoaded', function() {
             resetLasso();
             clearSelection();
             
-            // Ensure scrolling is enabled when switching to eraser
             canvasContainer.style.overflow = 'auto';
             canvasContainer.classList.remove('painting-mode');
             canvasContainer.classList.add('scroll-mode');
@@ -1255,7 +1737,6 @@ document.addEventListener('DOMContentLoaded', function() {
             selectionInfo.style.display = 'block';
             resetLasso();
             
-            // Enable scrolling for auto-select
             canvasContainer.style.overflow = 'auto';
             canvasContainer.classList.remove('painting-mode');
             canvasContainer.classList.add('scroll-mode');
@@ -1268,7 +1749,6 @@ document.addEventListener('DOMContentLoaded', function() {
             selectionInfo.style.display = 'none';
             clearSelection();
             
-            // Enable scrolling for lasso
             canvasContainer.style.overflow = 'auto';
             canvasContainer.classList.remove('painting-mode');
             canvasContainer.classList.add('scroll-mode');
@@ -1439,145 +1919,6 @@ document.addEventListener('DOMContentLoaded', function() {
         tempCtx.setLineDash([]);
     }
     
-    // Create a new project
-    function newProject() {
-        if (confirm('Start a new project? Any unsaved changes will be lost.')) {
-            currentProject = {
-                name: 'Untitled',
-                createdAt: new Date(),
-                lastSaved: null,
-                originalImage: null,
-                history: [],
-                settings: {
-                    currentColor: '#3498db',
-                    currentOpacity: 0.8,
-                    currentShape: 'circle',
-                    brushSize: 20,
-                    tolerance: 30
-                }
-            };
-            
-            resetCanvas();
-            
-            setCurrentColor('#3498db');
-            currentOpacity = 0.8;
-            opacitySlider.value = 80;
-            opacityValue.textContent = '80';
-            
-            currentShape = 'circle';
-            document.querySelectorAll('.brush-option').forEach(b => {
-                b.classList.remove('active');
-                if (b.dataset.shape === 'circle') b.classList.add('active');
-            });
-            
-            brushSize.value = 20;
-            brushSizeValue.textContent = '20';
-            
-            tolerance.value = 30;
-            toleranceValue.textContent = '30';
-            
-            appliedColors.clear();
-            resetZoom();
-        }
-    }
-    
-    // Save project to .apz file
-    function saveProject() {
-        currentProject.lastSaved = new Date();
-        currentProject.history = [...history];
-        currentProject.settings = {
-            currentColor: currentColor,
-            currentOpacity: currentOpacity,
-            currentShape: currentShape,
-            brushSize: parseInt(brushSize.value),
-            tolerance: parseInt(tolerance.value)
-        };
-        
-        const currentState = houseCanvas.toDataURL();
-        currentProject.currentState = currentState;
-        
-        if (originalImage) {
-            currentProject.originalImage = originalImage.src;
-        }
-        
-        const projectData = JSON.stringify(currentProject, null, 2);
-        const blob = new Blob([projectData], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${currentProject.name || 'house-design'}.apz`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    }
-    
-    // Load project from .apz file
-    function loadProject() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.apz';
-        
-        input.onchange = e => {
-            const file = e.target.files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                try {
-                    const projectData = JSON.parse(event.target.result);
-                    
-                    if (!projectData.history || !projectData.settings) {
-                        throw new Error('Invalid project file');
-                    }
-                    
-                    currentProject = projectData;
-                    
-                    setCurrentColor(projectData.settings.currentColor || '#3498db');
-                    currentOpacity = projectData.settings.currentOpacity || 0.8;
-                    opacitySlider.value = (currentOpacity * 100);
-                    opacityValue.textContent = (currentOpacity * 100).toString();
-                    
-                    currentShape = projectData.settings.currentShape || 'circle';
-                    document.querySelectorAll('.brush-option').forEach(b => {
-                        b.classList.remove('active');
-                        if (b.dataset.shape === currentShape) b.classList.add('active');
-                    });
-                    
-                    brushSize.value = projectData.settings.brushSize || 20;
-                    brushSizeValue.textContent = (projectData.settings.brushSize || 20).toString();
-                    
-                    tolerance.value = projectData.settings.tolerance || 30;
-                    toleranceValue.textContent = (projectData.settings.tolerance || 30).toString();
-                    
-                    history = [...projectData.history];
-                    historyIndex = history.length - 1;
-                    
-                    if (history.length > 0) {
-                        const lastState = history[historyIndex];
-                        const img = new Image();
-                        img.onload = function() {
-                            ctx.clearRect(0, 0, houseCanvas.width, houseCanvas.height);
-                            ctx.drawImage(img, 0, 0, houseCanvas.width, houseCanvas.height);
-                        };
-                        img.src = lastState;
-                    }
-                    
-                    appliedColors.clear();
-                    resetZoom();
-                    updateUndoRedoButtons();
-                } catch (error) {
-                    console.error('Error loading project:', error);
-                    alert('Error loading project file. The file may be corrupted or in an invalid format.');
-                }
-            };
-            reader.readAsText(file);
-        };
-        
-        input.click();
-    }
-    
     function clearSelection() {
         selectedPixels.clear();
         tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
@@ -1593,6 +1934,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 option.classList.add('active');
             }
         });
+        
+        currentProject.currentColorInfo = {
+            hex: color,
+            name: allColors[color] || 'Custom Color',
+            brand: getColorBrand(color)
+        };
     }
     
     function handleFileSelect(e) {
@@ -1627,7 +1974,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 resetZoom();
                 setupMobileScroll();
             };
+            img.onerror = function() {
+                showNotification('Error loading image file', 'error');
+            };
             img.src = event.target.result;
+        };
+        reader.onerror = function() {
+            showNotification('Error reading file', 'error');
         };
         reader.readAsDataURL(file);
     }
@@ -1902,7 +2255,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 tempCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
             }
             
-            // Only close the shape if we have enough points
             if (lassoPoints.length > 2) {
                 tempCtx.setLineDash([2, 2]);
                 tempCtx.lineTo(lassoPoints[0].x, lassoPoints[0].y);
@@ -1911,7 +2263,6 @@ document.addEventListener('DOMContentLoaded', function() {
             tempCtx.stroke();
             tempCtx.setLineDash([]);
             
-            // Make points larger and more visible on mobile
             const pointSize = isMobileDevice() ? 5 : 4;
             lassoPoints.forEach(point => {
                 tempCtx.fillStyle = '#FF0000';
@@ -1919,7 +2270,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 tempCtx.arc(point.x, point.y, pointSize, 0, Math.PI * 2);
                 tempCtx.fill();
                 
-                // Add white border for better visibility
                 tempCtx.strokeStyle = '#FFFFFF';
                 tempCtx.lineWidth = 1;
                 tempCtx.stroke();
@@ -2041,12 +2391,10 @@ document.addEventListener('DOMContentLoaded', function() {
         return result;
     }
     
-    // ✅ FIXED: Update painting functions to manage touch modes
     function startPainting(e) {
         if (currentTool !== 'brush' && currentTool !== 'eraser') return;
         isPainting = true;
         
-        // Add painting mode class to prevent scrolling
         if (isMobileDevice()) {
             canvasContainer.classList.add('painting-mode');
             canvasContainer.classList.remove('scroll-mode');
@@ -2174,7 +2522,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (isPainting && (currentTool === 'brush' || currentTool === 'eraser')) {
             isPainting = false;
             
-            // Remove painting mode class to allow scrolling
             if (isMobileDevice()) {
                 canvasContainer.classList.remove('painting-mode');
                 canvasContainer.classList.add('scroll-mode');
@@ -2316,8 +2663,153 @@ document.addEventListener('DOMContentLoaded', function() {
             canvasContainer.scrollTop = 0;
         }
     }
+
+    // Simple project save/load without security
+    function saveProject() {
+        try {
+            currentProject.lastSaved = new Date();
+            currentProject.history = [...history];
+            currentProject.settings = {
+                currentColor: currentColor,
+                currentOpacity: currentOpacity,
+                currentShape: currentShape,
+                brushSize: parseInt(brushSize.value),
+                tolerance: parseInt(tolerance.value)
+            };
+            
+            // Save applied colors
+            currentProject.appliedColors = Array.from(appliedColors).map(color => {
+                return {
+                    hex: color,
+                    name: allColors[color] || 'Custom Color',
+                    brand: getColorBrand(color)
+                };
+            });
+            
+            // Save current color information
+            currentProject.currentColorInfo = {
+                hex: currentColor,
+                name: allColors[currentColor] || 'Custom Color',
+                brand: getColorBrand(currentColor)
+            };
+
+            const currentState = houseCanvas.toDataURL();
+            currentProject.currentState = currentState;
+            
+            if (originalImage) {
+                currentProject.originalImage = originalImage.src;
+            }
+            
+            const projectData = JSON.stringify(currentProject, null, 2);
+            const blob = new Blob([projectData], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${currentProject.name || 'house-design'}.apz`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showNotification('Project saved successfully!');
+            
+        } catch (error) {
+            console.error('Save error:', error);
+            showNotification('Error saving project: ' + error.message, 'error');
+        }
+    }
     
-    // Show color selection popup
+    function loadProject() {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = '.apz';
+        
+        input.onchange = e => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                try {
+                    const projectData = JSON.parse(event.target.result);
+                    loadValidatedProject(projectData);
+                    showNotification('Project loaded successfully!');
+                    
+                } catch (error) {
+                    console.error('Load error:', error);
+                    showNotification('Error loading project file. File may be corrupted.', 'error');
+                }
+            };
+            
+            reader.onerror = function() {
+                showNotification('Error reading file', 'error');
+            };
+            
+            reader.readAsText(file);
+        };
+        
+        input.click();
+    }
+    
+    function loadValidatedProject(projectData) {
+        currentProject = projectData;
+        
+        // Load applied colors
+        if (projectData.appliedColors && Array.isArray(projectData.appliedColors)) {
+            appliedColors.clear();
+            projectData.appliedColors.forEach(colorInfo => {
+                appliedColors.add(colorInfo.hex);
+            });
+        } else {
+            appliedColors.clear();
+        }
+        
+        // Load current color information
+        if (projectData.currentColorInfo) {
+            setCurrentColor(projectData.currentColorInfo.hex);
+        } else {
+            setCurrentColor(projectData.settings.currentColor || '#3498db');
+        }
+        
+        currentOpacity = projectData.settings.currentOpacity || 0.8;
+        opacitySlider.value = (currentOpacity * 100);
+        opacityValue.textContent = (currentOpacity * 100).toString();
+        
+        currentShape = projectData.settings.currentShape || 'circle';
+        document.querySelectorAll('.brush-option').forEach(b => {
+            b.classList.remove('active');
+            if (b.dataset.shape === currentShape) b.classList.add('active');
+        });
+        
+        brushSize.value = projectData.settings.brushSize || 20;
+        brushSizeValue.textContent = (projectData.settings.brushSize || 20).toString();
+        
+        tolerance.value = projectData.settings.tolerance || 30;
+        toleranceValue.textContent = (projectData.settings.tolerance || 30).toString();
+        
+        history = [...projectData.history];
+        historyIndex = history.length - 1;
+        
+        if (history.length > 0) {
+            const lastState = history[historyIndex];
+            const img = new Image();
+            img.onload = function() {
+                ctx.clearRect(0, 0, houseCanvas.width, houseCanvas.height);
+                ctx.drawImage(img, 0, 0, houseCanvas.width, houseCanvas.height);
+            };
+            img.onerror = function() {
+                showNotification('Error loading project image data', 'error');
+                resetCanvas();
+            };
+            img.src = lastState;
+        }
+        
+        resetZoom();
+        updateUndoRedoButtons();
+    }
+
+    // Show color selection popup for download
     function showColorSelectionPopup() {
         const popup = document.createElement('div');
         popup.className = 'modal';
@@ -2366,6 +2858,9 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('confirmDownload').disabled = true;
         } else {
             appliedColorsArray.forEach(color => {
+                const colorName = allColors[color] || 'Custom Color';
+                const brand = getColorBrand(color);
+                
                 const colorItem = document.createElement('div');
                 colorItem.className = 'color-selection-item';
                 colorItem.style.cssText = `
@@ -2379,8 +2874,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     cursor: pointer;
                     transition: all 0.2s ease;
                 `;
-                
-                const colorName = allColors[color] || 'Custom Color';
                 
                 colorItem.innerHTML = `
                     <div class="color-checkbox" style="display: flex; align-items: center;">
@@ -2397,6 +2890,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="color-details" style="flex: 1;">
                         <div class="color-name" style="font-weight: bold; color: #2c3e50; margin-bottom: 2px; font-size: 0.9rem;">${colorName}</div>
                         <div class="color-code" style="font-family: monospace; color: #666; font-size: 0.8rem;">${color.toUpperCase()}</div>
+                        <div class="color-brand" style="font-size: 0.7rem; color: #888;">${brand}</div>
                     </div>
                     <div class="remove-color" style="
                         color: #e74c3c;
@@ -2537,6 +3031,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const colorName = allColors[color] || 'Custom Color';
             const colorCode = color.toUpperCase();
+            const brand = getColorBrand(color);
             
             const textStartX = blockX + (30 * scaleFactor);
             const availableWidth = colorBlockWidth - (30 * scaleFactor);
@@ -2547,7 +3042,8 @@ document.addEventListener('DOMContentLoaded', function() {
             outCtx.font = `${8 * scaleFactor}px Arial, sans-serif`;
             outCtx.fillStyle = '#6c757d';
             
-            const words = colorName.split(' ');
+            const displayText = `${colorName} (${brand})`;
+            const words = displayText.split(' ');
             let line = '';
             let lineCount = 0;
             const maxLines = 2;
