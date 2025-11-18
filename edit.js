@@ -123,6 +123,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let isLassoActive = false;
     let lassoPoints = [];
     let isDrawingLasso = false;
+    let lastLassoTapTime = 0; // NEW: For double-tap detection
     
     // Enhanced Auto-Select state
     let selectedPixels = new Set();
@@ -438,19 +439,27 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.removeEventListener('touchstart', handleToolTouchStart);
         houseCanvas.removeEventListener('touchmove', handleToolTouchMove);
         houseCanvas.removeEventListener('touchend', handleToolTouchEnd);
+        houseCanvas.removeEventListener('touchstart', handleLassoTouchStart);
+        houseCanvas.removeEventListener('touchmove', handleLassoTouchMove);
+        houseCanvas.removeEventListener('touchend', handleLassoTouchEnd);
         
         // Add new touch event listeners for tools
         houseCanvas.addEventListener('touchstart', handleToolTouchStart, { passive: false });
         houseCanvas.addEventListener('touchmove', handleToolTouchMove, { passive: false });
         houseCanvas.addEventListener('touchend', handleToolTouchEnd);
+        
+        // Special handlers for Lasso tool
+        houseCanvas.addEventListener('touchstart', handleLassoTouchStart, { passive: false });
+        houseCanvas.addEventListener('touchmove', handleLassoTouchMove, { passive: false });
+        houseCanvas.addEventListener('touchend', handleLassoTouchEnd);
     }
 
-    // Enhanced touch handler for Auto-Select and Lasso
+    // Enhanced touch handler for Auto-Select
     function handleToolTouchStart(e) {
         if (e.touches.length !== 1) return; // Only handle single touch for tools
         
-        // Only process for Auto-Select and Lasso tools
-        if (currentTool !== 'autoSelect' && currentTool !== 'lasso') return;
+        // Only process for Auto-Select tool
+        if (currentTool !== 'autoSelect') return;
         
         e.preventDefault();
         e.stopPropagation();
@@ -468,22 +477,20 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.dispatchEvent(mouseDownEvent);
         
         // For Auto-Select: Also trigger click for region selection
-        if (currentTool === 'autoSelect') {
-            setTimeout(() => {
-                const clickEvent = new MouseEvent('click', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY,
-                    bubbles: true,
-                    cancelable: true
-                });
-                houseCanvas.dispatchEvent(clickEvent);
-            }, 10);
-        }
+        setTimeout(() => {
+            const clickEvent = new MouseEvent('click', {
+                clientX: touch.clientX,
+                clientY: touch.clientY,
+                bubbles: true,
+                cancelable: true
+            });
+            houseCanvas.dispatchEvent(clickEvent);
+        }, 10);
     }
 
     function handleToolTouchMove(e) {
         if (e.touches.length !== 1) return;
-        if (currentTool !== 'autoSelect' && currentTool !== 'lasso') return;
+        if (currentTool !== 'autoSelect') return;
         
         e.preventDefault();
         e.stopPropagation();
@@ -500,7 +507,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function handleToolTouchEnd(e) {
-        if (currentTool !== 'autoSelect' && currentTool !== 'lasso') return;
+        if (currentTool !== 'autoSelect') return;
         
         e.preventDefault();
         e.stopPropagation();
@@ -516,18 +523,192 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         houseCanvas.dispatchEvent(mouseUpEvent);
+    }
+
+    // SPECIAL HANDLERS FOR LASSO TOOL
+    function handleLassoTouchStart(e) {
+        if (e.touches.length !== 1) return;
+        if (currentTool !== 'lasso') return;
         
-        // For Lasso: Double-tap to complete selection
-        if (currentTool === 'lasso' && lassoPoints.length > 2) {
-            setTimeout(() => {
-                const dblClickEvent = new MouseEvent('dblclick', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY,
-                    bubbles: true,
-                    cancelable: true
-                });
-                houseCanvas.dispatchEvent(dblClickEvent);
-            }, 50);
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const touch = e.touches[0];
+        const pos = getMousePos(e);
+        
+        // For Lasso: Start drawing or add point
+        if (!isDrawingLasso) {
+            // Start new lasso
+            lassoPoints = [{x: pos.x, y: pos.y}];
+            isDrawingLasso = true;
+            drawLassoPreview();
+            
+            // Show mobile instruction
+            showMobileLassoInstruction("Tap to add points. Double-tap to complete.");
+        } else {
+            // Add point to existing lasso
+            lassoPoints.push({x: pos.x, y: pos.y});
+            drawLassoPreview();
+        }
+        
+        // Also dispatch click event for consistency
+        const clickEvent = new MouseEvent('click', {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            bubbles: true,
+            cancelable: true
+        });
+        houseCanvas.dispatchEvent(clickEvent);
+    }
+
+    function handleLassoTouchMove(e) {
+        if (e.touches.length !== 1) return;
+        if (currentTool !== 'lasso' || !isDrawingLasso) return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const touch = e.touches[0];
+        const pos = getMousePos(e);
+        
+        // Update temporary line to current touch position
+        drawLassoPreviewWithTemp(pos.x, pos.y);
+        
+        const mouseMoveEvent = new MouseEvent('mousemove', {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            bubbles: true,
+            cancelable: true
+        });
+        
+        houseCanvas.dispatchEvent(mouseMoveEvent);
+    }
+
+    function handleLassoTouchEnd(e) {
+        if (currentTool !== 'lasso') return;
+        
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const touch = e.changedTouches[0];
+        
+        // Check for double-tap to complete lasso
+        const currentTime = new Date().getTime();
+        const tapLength = currentTime - lastLassoTapTime;
+        lastLassoTapTime = currentTime;
+        
+        if (tapLength < 300 && tapLength > 0 && isDrawingLasso && lassoPoints.length > 2) {
+            // Double-tap detected - complete lasso
+            fillLassoSelection();
+            resetLasso();
+            hideMobileLassoInstruction();
+            
+            appliedColors.add(currentColor);
+            saveToHistory();
+        }
+        
+        const mouseUpEvent = new MouseEvent('mouseup', {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            bubbles: true,
+            cancelable: true
+        });
+        
+        houseCanvas.dispatchEvent(mouseUpEvent);
+    }
+
+    // Enhanced Lasso preview with temporary line
+    function drawLassoPreviewWithTemp(tempX, tempY) {
+        tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+        
+        if (lassoPoints.length > 0) {
+            tempCtx.strokeStyle = '#FF0000';
+            tempCtx.lineWidth = 2;
+            tempCtx.setLineDash([5, 5]);
+            tempCtx.beginPath();
+            tempCtx.moveTo(lassoPoints[0].x, lassoPoints[0].y);
+            
+            // Draw existing points
+            for (let i = 1; i < lassoPoints.length; i++) {
+                tempCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
+            }
+            
+            // Draw temporary line to current position
+            if (lassoPoints.length > 0) {
+                tempCtx.lineTo(tempX, tempY);
+            }
+            
+            // Close the shape with dashed line
+            if (lassoPoints.length > 1) {
+                tempCtx.setLineDash([2, 2]);
+                tempCtx.lineTo(lassoPoints[0].x, lassoPoints[0].y);
+            }
+            
+            tempCtx.stroke();
+            tempCtx.setLineDash([]);
+            
+            // Draw points
+            lassoPoints.forEach(point => {
+                tempCtx.fillStyle = '#FF0000';
+                tempCtx.beginPath();
+                tempCtx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+                tempCtx.fill();
+            });
+            
+            // Draw temporary point
+            tempCtx.fillStyle = '#00FF00';
+            tempCtx.beginPath();
+            tempCtx.arc(tempX, tempY, 3, 0, Math.PI * 2);
+            tempCtx.fill();
+        }
+    }
+
+    // Mobile instruction for Lasso tool
+    function showMobileLassoInstruction(message) {
+        hideMobileLassoInstruction();
+        
+        const instruction = document.createElement('div');
+        instruction.id = 'mobileLassoInstruction';
+        instruction.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            text-align: center;
+            z-index: 10000;
+            pointer-events: none;
+            max-width: 80%;
+            animation: fadeInOut 3s ease-in-out;
+        `;
+        
+        instruction.textContent = message;
+        document.body.appendChild(instruction);
+        
+        // Add CSS for animation
+        if (!document.getElementById('lasso-instruction-styles')) {
+            const styles = document.createElement('style');
+            styles.id = 'lasso-instruction-styles';
+            styles.textContent = `
+                @keyframes fadeInOut {
+                    0% { opacity: 0; }
+                    20% { opacity: 1; }
+                    80% { opacity: 1; }
+                    100% { opacity: 0; }
+                }
+            `;
+            document.head.appendChild(styles);
+        }
+    }
+
+    function hideMobileLassoInstruction() {
+        const existing = document.getElementById('mobileLassoInstruction');
+        if (existing) {
+            existing.remove();
         }
     }
     
@@ -1602,18 +1783,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 tempCtx.lineTo(lassoPoints[i].x, lassoPoints[i].y);
             }
             
-            if (lassoPoints.length > 1) {
+            // Only close the shape if we have enough points
+            if (lassoPoints.length > 2) {
+                tempCtx.setLineDash([2, 2]);
                 tempCtx.lineTo(lassoPoints[0].x, lassoPoints[0].y);
             }
             
             tempCtx.stroke();
             tempCtx.setLineDash([]);
             
+            // Make points larger and more visible on mobile
+            const pointSize = isMobileDevice() ? 5 : 4;
             lassoPoints.forEach(point => {
                 tempCtx.fillStyle = '#FF0000';
                 tempCtx.beginPath();
-                tempCtx.arc(point.x, point.y, 4, 0, Math.PI * 2);
+                tempCtx.arc(point.x, point.y, pointSize, 0, Math.PI * 2);
                 tempCtx.fill();
+                
+                // Add white border for better visibility
+                tempCtx.strokeStyle = '#FFFFFF';
+                tempCtx.lineWidth = 1;
+                tempCtx.stroke();
             });
         }
     }
@@ -1660,6 +1850,7 @@ document.addEventListener('DOMContentLoaded', function() {
         isDrawingLasso = false;
         lassoPoints = [];
         tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+        hideMobileLassoInstruction();
     }
     
     function getColorAtPixel(imageData, x, y) {
@@ -1992,7 +2183,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Show color selection popup (same as your version, unchanged except small sizing)
+    // Show color selection popup
     function showColorSelectionPopup() {
         const popup = document.createElement('div');
         popup.className = 'modal';
