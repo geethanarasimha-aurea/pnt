@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let isTouchPainting = false;
     let touchStartX, touchStartY;
     
-    // Mobile scroll state
+    // Mobile scroll state (single finger scroll mode when not painting tools)
     let isMobileScrolling = false;
     let scrollStartX, scrollStartY;
     let scrollOffsetX = 0, scrollOffsetY = 0;
@@ -370,7 +370,7 @@ document.addEventListener('DOMContentLoaded', function() {
         zoomOutBtn.addEventListener('click', zoomOut);
         resetZoomBtn.addEventListener('click', resetZoom);
         
-        // Canvas painting events
+        // Canvas painting events (mouse)
         houseCanvas.addEventListener('mousedown', startPainting);
         houseCanvas.addEventListener('mousemove', paint);
         houseCanvas.addEventListener('mouseup', stopPainting);
@@ -378,7 +378,7 @@ document.addEventListener('DOMContentLoaded', function() {
         houseCanvas.addEventListener('click', handleCanvasClick);
         houseCanvas.addEventListener('dblclick', handleCanvasDoubleClick);
         
-        // Touch events for mobile - REMOVED PINCH ZOOM, ADDED TWO-FINGER SCROLL
+        // Touch events for painting on mobile (single finger only)
         houseCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
         houseCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
         houseCanvas.addEventListener('touchend', handleTouchEnd);
@@ -401,9 +401,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // Close modals when clicking outside
         window.addEventListener('click', (e) => {
-        if (e.target === uploadModal) {
-            uploadModal.style.display = 'none';
-        }
+            if (e.target === uploadModal) {
+                uploadModal.style.display = 'none';
+            }
         });
         
         // Set initial canvas size
@@ -446,17 +446,14 @@ document.addEventListener('DOMContentLoaded', function() {
         document.removeEventListener('touchend', handleTwoFingerTouchEnd);
         document.removeEventListener('touchcancel', handleTwoFingerTouchEnd);
         
-        // Add new event listeners
+        // Add new event listener on container
         canvasContainer.addEventListener('touchstart', handleTwoFingerTouchStart, { passive: false });
     }
 
     function handleTwoFingerTouchStart(e) {
-        // Don't interfere with painting tools
-        if (currentTool === 'brush' || currentTool === 'eraser') return;
-        
         const touches = e.touches;
         
-        // Check for two-finger touch anywhere on the canvas container
+        // ✅ Two-finger pan ALWAYS works (even when brush/eraser is selected)
         if (touches.length === 2) {
             const touch1 = touches[0];
             const touch2 = touches[1];
@@ -563,7 +560,7 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.removeEventListener('touchmove', handleMobileScrollMove);
         canvasContainer.removeEventListener('touchend', handleMobileScrollEnd);
         
-        // Add mobile scroll handlers
+        // Add mobile scroll handlers (single finger scroll when not painting tools)
         canvasContainer.addEventListener('touchstart', handleMobileScrollStart, { passive: false });
         canvasContainer.addEventListener('touchmove', handleMobileScrollMove, { passive: false });
         canvasContainer.addEventListener('touchend', handleMobileScrollEnd);
@@ -692,11 +689,12 @@ document.addEventListener('DOMContentLoaded', function() {
         canvasContainer.addEventListener('touchstart', removeIndicators);
     }
     
-    // NEW: Handle mobile scroll start (single finger)
+    // NEW: Handle mobile scroll start (single finger in container when not painting)
     function handleMobileScrollStart(e) {
         // Don't start regular scrolling if we're in two-finger mode
         if (isTwoFingerScrolling) return;
         
+        // single finger only & only when NOT brush/eraser (so one finger always paints on canvas for those tools)
         if (e.touches.length !== 1 || currentTool === 'brush' || currentTool === 'eraser') return;
         
         e.preventDefault();
@@ -788,10 +786,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // UPDATED: Touch event handlers for mobile - REMOVED PINCH ZOOM
+    // UPDATED: Touch event handlers for mobile - single finger painting
     function handleTouchStart(e) {
-        // Handle single touch for painting only
+        // Only for brush/eraser and single finger
         if (currentTool !== 'brush' && currentTool !== 'eraser') return;
+        if (!e.touches || e.touches.length !== 1) return;
         
         e.preventDefault();
         isTouchPainting = true;
@@ -812,6 +811,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function handleTouchMove(e) {
         // Handle single touch for painting only
         if (!isTouchPainting) return;
+        if (!e.touches || e.touches.length !== 1) return;
         
         e.preventDefault();
         
