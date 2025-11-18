@@ -116,7 +116,9 @@ document.addEventListener('DOMContentLoaded', function() {
             currentShape: 'circle',
             brushSize: 20,
             tolerance: 30
-        }
+        },
+        appliedColors: [], // ✅ NEW: Store applied colors with names
+        currentColorInfo: null // ✅ NEW: Store current color information
     };
     
     // Lasso tool state
@@ -282,9 +284,69 @@ document.addEventListener('DOMContentLoaded', function() {
                 #houseCanvas {
                     touch-action: none;
                 }
+
+                /* Notification styles */
+                .notification {
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: #2ecc71;
+                    color: white;
+                    padding: 12px 20px;
+                    border-radius: 5px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                    z-index: 10000;
+                    font-size: 0.9rem;
+                    animation: slideIn 0.3s ease-out;
+                }
+
+                @keyframes slideIn {
+                    from { transform: translateX(100%); opacity: 0; }
+                    to { transform: translateX(0); opacity: 1; }
+                }
+
+                .notification.error {
+                    background: #e74c3c;
+                }
+
+                .notification.info {
+                    background: #3498db;
+                }
             `;
             document.head.appendChild(styles);
         }
+    }
+
+    // ✅ NEW: Helper function to get color brand
+    function getColorBrand(hexColor) {
+        if (asianPaintsColors[hexColor]) return 'Asian Paints';
+        if (bergerPaintsColors[hexColor]) return 'Berger';
+        if (opusPaintsColors[hexColor]) return 'Opus';
+        if (duluxPaintsColors[hexColor]) return 'Dulux';
+        if (jswPaintsColors[hexColor]) return 'JSW';
+        if (nerolacPaintsColors[hexColor]) return 'Nerolac';
+        if (nipponPaintsColors[hexColor]) return 'Nippon';
+        return 'Custom';
+    }
+
+    // ✅ NEW: Show notification
+    function showNotification(message, type = 'info') {
+        // Remove existing notifications
+        const existingNotifications = document.querySelectorAll('.notification');
+        existingNotifications.forEach(notification => notification.remove());
+
+        const notification = document.createElement('div');
+        notification.className = `notification ${type}`;
+        notification.textContent = message;
+        
+        document.body.appendChild(notification);
+        
+        // Auto remove after 3 seconds
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.remove();
+            }
+        }, 3000);
     }
     
     // Initialize the application
@@ -1454,7 +1516,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     currentShape: 'circle',
                     brushSize: 20,
                     tolerance: 30
-                }
+                },
+                appliedColors: [],
+                currentColorInfo: null
             };
             
             resetCanvas();
@@ -1481,7 +1545,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Save project to .apz file
+    // ✅ UPDATED: Save project to .apz file - Save applied colors and color information
     function saveProject() {
         currentProject.lastSaved = new Date();
         currentProject.history = [...history];
@@ -1493,6 +1557,22 @@ document.addEventListener('DOMContentLoaded', function() {
             tolerance: parseInt(tolerance.value)
         };
         
+        // ✅ NEW: Save applied colors with their names and codes
+        currentProject.appliedColors = Array.from(appliedColors).map(color => {
+            return {
+                hex: color,
+                name: allColors[color] || 'Custom Color',
+                brand: getColorBrand(color)
+            };
+        });
+        
+        // ✅ NEW: Save current color information
+        currentProject.currentColorInfo = {
+            hex: currentColor,
+            name: allColors[currentColor] || 'Custom Color',
+            brand: getColorBrand(currentColor)
+        };
+
         const currentState = houseCanvas.toDataURL();
         currentProject.currentState = currentState;
         
@@ -1511,9 +1591,12 @@ document.addEventListener('DOMContentLoaded', function() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        
+        // Show success message
+        showNotification('Project saved successfully! Applied colors and color information saved.');
     }
     
-    // Load project from .apz file
+    // ✅ UPDATED: Load project from .apz file - Load applied colors and color information
     function loadProject() {
         const input = document.createElement('input');
         input.type = 'file';
@@ -1534,7 +1617,25 @@ document.addEventListener('DOMContentLoaded', function() {
                     
                     currentProject = projectData;
                     
-                    setCurrentColor(projectData.settings.currentColor || '#3498db');
+                    // ✅ NEW: Load applied colors if they exist
+                    if (projectData.appliedColors && Array.isArray(projectData.appliedColors)) {
+                        appliedColors.clear();
+                        projectData.appliedColors.forEach(colorInfo => {
+                            appliedColors.add(colorInfo.hex);
+                        });
+                        showNotification(`Loaded ${projectData.appliedColors.length} applied colors from project.`);
+                    } else {
+                        appliedColors.clear();
+                    }
+                    
+                    // ✅ NEW: Load current color information if it exists
+                    if (projectData.currentColorInfo) {
+                        setCurrentColor(projectData.currentColorInfo.hex);
+                        showNotification(`Current color: ${projectData.currentColorInfo.name} (${projectData.currentColorInfo.brand})`);
+                    } else {
+                        setCurrentColor(projectData.settings.currentColor || '#3498db');
+                    }
+                    
                     currentOpacity = projectData.settings.currentOpacity || 0.8;
                     opacitySlider.value = (currentOpacity * 100);
                     opacityValue.textContent = (currentOpacity * 100).toString();
@@ -1564,12 +1665,13 @@ document.addEventListener('DOMContentLoaded', function() {
                         img.src = lastState;
                     }
                     
-                    appliedColors.clear();
                     resetZoom();
                     updateUndoRedoButtons();
+                    
+                    showNotification('Project loaded successfully!');
                 } catch (error) {
                     console.error('Error loading project:', error);
-                    alert('Error loading project file. The file may be corrupted or in an invalid format.');
+                    showNotification('Error loading project file. The file may be corrupted or in an invalid format.', 'error');
                 }
             };
             reader.readAsText(file);
@@ -1593,6 +1695,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 option.classList.add('active');
             }
         });
+        
+        // ✅ NEW: Update current color info in project
+        currentProject.currentColorInfo = {
+            hex: color,
+            name: allColors[color] || 'Custom Color',
+            brand: getColorBrand(color)
+        };
     }
     
     function handleFileSelect(e) {
@@ -2366,6 +2475,9 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('confirmDownload').disabled = true;
         } else {
             appliedColorsArray.forEach(color => {
+                const colorName = allColors[color] || 'Custom Color';
+                const brand = getColorBrand(color);
+                
                 const colorItem = document.createElement('div');
                 colorItem.className = 'color-selection-item';
                 colorItem.style.cssText = `
@@ -2379,8 +2491,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     cursor: pointer;
                     transition: all 0.2s ease;
                 `;
-                
-                const colorName = allColors[color] || 'Custom Color';
                 
                 colorItem.innerHTML = `
                     <div class="color-checkbox" style="display: flex; align-items: center;">
@@ -2397,6 +2507,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="color-details" style="flex: 1;">
                         <div class="color-name" style="font-weight: bold; color: #2c3e50; margin-bottom: 2px; font-size: 0.9rem;">${colorName}</div>
                         <div class="color-code" style="font-family: monospace; color: #666; font-size: 0.8rem;">${color.toUpperCase()}</div>
+                        <div class="color-brand" style="font-size: 0.7rem; color: #888;">${brand}</div>
                     </div>
                     <div class="remove-color" style="
                         color: #e74c3c;
@@ -2537,6 +2648,7 @@ document.addEventListener('DOMContentLoaded', function() {
             
             const colorName = allColors[color] || 'Custom Color';
             const colorCode = color.toUpperCase();
+            const brand = getColorBrand(color);
             
             const textStartX = blockX + (30 * scaleFactor);
             const availableWidth = colorBlockWidth - (30 * scaleFactor);
@@ -2547,7 +2659,9 @@ document.addEventListener('DOMContentLoaded', function() {
             outCtx.font = `${8 * scaleFactor}px Arial, sans-serif`;
             outCtx.fillStyle = '#6c757d';
             
-            const words = colorName.split(' ');
+            // Display color name and brand
+            const displayText = `${colorName} (${brand})`;
+            const words = displayText.split(' ');
             let line = '';
             let lineCount = 0;
             const maxLines = 2;
